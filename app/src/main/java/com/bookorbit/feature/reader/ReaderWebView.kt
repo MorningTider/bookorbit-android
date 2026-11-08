@@ -106,6 +106,14 @@ class ReaderController {
 
     fun clearSelection() = command(buildJsonObject { put("type", "clearSelection") }.toString())
 
+    fun setFonts(faces: List<ReaderFontFace>) {
+        val cmd = buildJsonObject {
+            put("type", "setFonts")
+            put("faces", ReaderBridge.json.encodeToJsonElement(kotlinx.serialization.builtins.ListSerializer(ReaderFontFace.serializer()), faces))
+        }
+        command(cmd.toString())
+    }
+
     fun applyStyles(settings: ReaderSettings) {
         val cmd = buildJsonObject {
             put("type", "applyStyles")
@@ -185,6 +193,7 @@ private class EmptyActionModeCallback(private val delegate: android.view.ActionM
 @Composable
 fun ReaderWebView(
     controller: ReaderController,
+    fontRepository: ReaderFontRepository,
     modifier: Modifier = Modifier,
     onRendererGone: () -> Unit,
 ) {
@@ -194,6 +203,12 @@ fun ReaderWebView(
         factory = { context ->
             val assetLoader = WebViewAssetLoader.Builder()
                 .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(context))
+                .addPathHandler("/reader-fonts/", WebViewAssetLoader.PathHandler { path ->
+                    val input = fontRepository.openCached(path)
+                    if (input == null) WebResourceResponse("text/plain", "UTF-8", 404, "Not Found", emptyMap(), null)
+                    else WebResourceResponse("font/${path.substringAfterLast('.')}", null, 200, "OK",
+                        mapOf("Access-Control-Allow-Origin" to "*", "Cache-Control" to "no-store"), input)
+                })
                 .build()
 
             ReaderNativeWebView(context).apply {

@@ -1,3 +1,7 @@
+## 中文定制版
+
+本 fork 的阅读器定制代码维护在 `custom/bookorbit-android-v0.7.1`。需求和升级记录见 [定制需求](docs/CUSTOMIZATION_REQUIREMENTS.md)、[功能状态](docs/CUSTOM_FEATURE_MATRIX.md)、[剩余事项](docs/CUSTOMIZATION_REMAINING.md)、[补丁索引](docs/CUSTOM_PATCH_INDEX.md) 和 [上游同步流程](docs/CUSTOM_BRANCH_WORKFLOW.md)。
+
 # BookOrbit — Android (native)
 
 Native Kotlin / Jetpack Compose client for a self-hosted

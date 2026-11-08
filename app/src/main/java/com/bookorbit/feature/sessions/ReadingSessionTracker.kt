@@ -15,6 +15,10 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import retrofit2.HttpException
 import java.time.Instant
 import javax.inject.Inject
@@ -39,8 +43,26 @@ class ReadingSessionTracker @Inject constructor(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val recorder = ReadingSessionRecorder(maxGapMs = MAX_GAP_MS)
     private var lastCheckpointMs = 0L
+    private val snapshots = Channel<PendingReadingSessionEntity>(Channel.UNLIMITED)
+    private val sends = Mutex()
 
     init {
+        scope.launch {
+            for (entity in snapshots) {
+                sends.withLock {
+                    dao.upsert(entity)
+                    send(entity)
+                }
+            }
+        }
+        scope.launch {
+            while (true) {
+                delay(CHECKPOINT_INTERVAL_MS)
+                synchronized(this@ReadingSessionTracker) {
+                    if (recorder.isOpen) checkpointIfDue()
+                }
+            }
+        }
         // ProcessLifecycleOwner must be touched on the main thread.
         Handler(Looper.getMainLooper()).post {
             ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
@@ -106,11 +128,11 @@ class ReadingSessionTracker @Inject constructor(
     fun end() = endLocked()
 
     /** Send every queued session. Returns true if any remain (so the sync worker retries). */
-    suspend fun flushPending(): Boolean {
+    suspend fun flushPending(): Boolean = sends.withLock {
         for (entity in dao.all()) {
             send(entity)
         }
-        return dao.all().isNotEmpty()
+        dao.all().isNotEmpty()
     }
 
     @Synchronized
@@ -148,10 +170,7 @@ class ReadingSessionTracker @Inject constructor(
             progressDelta = snap.progressDelta,
             endProgress = snap.endProgress,
         )
-        scope.launch {
-            dao.upsert(entity)
-            send(entity)
-        }
+        snapshots.trySend(entity)
     }
 
     private suspend fun send(e: PendingReadingSessionEntity) {
@@ -170,8 +189,8 @@ class ReadingSessionTracker @Inject constructor(
             Log.d(TAG, "sent ${e.sessionType} session ${e.sessionId} file=${e.fileId} ${e.durationSeconds}s end=${e.endProgress}")
             dao.deleteIfUnchanged(e.sessionId, e.endedAt)
         } catch (t: HttpException) {
-            // A 4xx other than timeout/rate-limit won't succeed on retry (e.g. the file was removed).
-            if (t.code() in 400..499 && t.code() != 408 && t.code() != 429) {
+            // A 4xx other than authentication/timeout/rate-limit won't succeed on retry (e.g. the file was removed).
+            if (t.code() in 400..499 && t.code() != 401 && t.code() != 408 && t.code() != 429) {
                 Log.w(TAG, "dropping session ${e.sessionId}: HTTP ${t.code()}")
                 dao.deleteIfUnchanged(e.sessionId, e.endedAt)
             } else {

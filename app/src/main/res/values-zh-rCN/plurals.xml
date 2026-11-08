@@ -1,0 +1,26 @@
+<resources>
+    <plurals name="home_streak_days">
+        <item quantity="other">%d 天</item>
+    </plurals>
+    <plurals name="bookdrop_msg_applied_fetched">
+        <item quantity="other">已为 %d 个文件应用获取的元数据</item>
+    </plurals>
+    <plurals name="bookdrop_msg_duplicates">
+        <item quantity="other">（%d 项重复）</item>
+    </plurals>
+    <plurals name="rsearch_first_n">
+        <item quantity="other">前 %d 个匹配</item>
+    </plurals>
+    <plurals name="rsearch_n">
+        <item quantity="other">%d 个匹配</item>
+    </plurals>
+    <plurals name="lib_book_count">
+        <item quantity="other">%d 本书</item>
+    </plurals>
+    <plurals name="detail_in_collections">
+        <item quantity="other">收录于 %d 个合集</item>
+    </plurals>
+    <plurals name="settings_downloads_summary">
+        <item quantity="other">%1$d 本书，%2$s</item>
+    </plurals>
+</resources>

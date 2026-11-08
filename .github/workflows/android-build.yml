@@ -16,7 +16,7 @@ name: Android Build
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'custom/**']
   pull_request:
   workflow_dispatch:
 
@@ -64,6 +64,11 @@ jobs:
             -storepass android -alias AndroidDebugKey -keypass android \
             -dname "CN=Android Debug,O=Android,C=US" -validity 10950 \
             -keyalg RSA -keysize 2048
+
+      - name: Reader compatibility and Chinese resources
+        run: |
+          node --test compat-tests/*.test.mjs
+          python3 scripts/verify-locales.py
 
       - name: Lint
         run: ./gradlew :app:lintFullDebug :app:lintFdroidDebug --no-daemon

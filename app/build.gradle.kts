@@ -51,8 +51,8 @@ android {
         // .github/workflows/release-please.yml (release-please's own generic-file updater is
         // unreliable for this -- see the commit that introduced this comment). Both must stay
         // plain literals so F-Droid's static manifest parser can find them too.
-        versionCode = 701
-        versionName = "0.7.1"
+        versionCode = 702
+        versionName = "0.7.1-custom.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -97,7 +97,7 @@ android {
 
     buildTypes {
         debug {
-            applicationIdSuffix = ".debug"
+            applicationIdSuffix = ".compat"
             isDebuggable = true
             // en-XA / ar-XB: accented and mirrored English, so any text still hard-coded in code stands
             // out when the device is switched to one of those locales. Debug builds only.

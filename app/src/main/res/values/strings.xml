@@ -451,4 +451,26 @@
     <string name="reader_open_app">Open in App</string>
     <string name="reader_web_menu">Web reader options</string>
     <string name="reader_web_reload">Reload web reader</string>
+    <string name="rs_reading_settings">Reading settings</string>
+    <string name="rs_system_brightness">Follow system brightness</string>
+    <string name="rs_brightness">Brightness</string>
+    <string name="rs_paragraph_spacing">Paragraph spacing</string>
+    <string name="rs_letter_spacing">Letter spacing</string>
+    <string name="rs_margins">Page margins</string>
+    <string name="rs_download_fonts">Chinese and custom fonts</string>
+    <string name="rs_fonts_empty">No fonts found. Connect to your server and refresh.</string>
+    <string name="rs_server_font">Server font</string>
+    <string name="rs_user_font">Your font</string>
+    <string name="rs_font_selected">Selected</string>
+    <string name="rs_font_use">Use</string>
+    <string name="rs_font_download">Download and use</string>
+    <string name="rs_font_offline_hint">Fonts come from your BookOrbit server. Downloaded fonts remain available offline.</string>
+    <string name="rs_fonts_error">Cannot load the font. Check your connection and try again.</string>
+    <string name="rs_bold">Bold text</string>
+    <string name="rs_indent">Indent paragraphs</string>
+    <string name="rs_justify">Justify text</string>
+    <string name="rs_keep_screen_on">Keep screen on</string>
+    <string name="rs_reset">Reset reading settings</string>
+    <string name="rs_progress">Reading progress</string>
+    <string name="rs_refresh_fonts">Refresh fonts</string>
 </resources>

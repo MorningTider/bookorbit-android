@@ -97,4 +97,21 @@ class ReadingSessionRecorderTest {
         r.setActive(true, nowMs = 60_000)
         assertEquals(0, r.inactiveForMs(70_000))
     }
+    @Test
+    fun `periodic checkpoints do not keep an idle reader active forever`() {
+        val r = recorder()
+        r.begin("read:1", 1, SessionType.READ, 0.0, nowMs = 0)
+        for (minute in 1..10) r.snapshot(minute * 60_000L)
+        assertEquals(120, r.end(600_000)!!.durationSeconds)
+    }
+
+    @Test
+    fun `turning a page after idle resumes counting from that page`() {
+        val r = recorder()
+        r.begin("read:1", 1, SessionType.READ, 0.0, nowMs = 0)
+        r.snapshot(60_000)
+        r.snapshot(300_000)
+        r.progress(2.0, 600_000)
+        assertEquals(150, r.end(630_000)!!.durationSeconds)
+    }
 }

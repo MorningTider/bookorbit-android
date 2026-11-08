@@ -14,6 +14,13 @@ data class ReaderSettings(
     val fontSize: Int = 16,
     val lineHeight: Double = 1.5,
     val fontFamily: String? = null,
+    val fontWeight: Int = 400,
+    val paragraphSpacing: Double = 0.6,
+    val letterSpacing: Double = 0.0,
+    val paragraphIndent: Boolean = false,
+    val sidePadding: Int = 20,
+    val brightness: Double = -1.0,
+    val keepScreenOn: Boolean = true,
     val maxColumnCount: Int = 2,
     val gap: Double = 0.05,
     val maxInlineSize: Int = 720,
@@ -25,7 +32,7 @@ data class ReaderSettings(
     val flow: String = "paginated", // "paginated" | "scrolled"
 )
 
-val FONT_SIZE_RANGE = 10..32
+val FONT_SIZE_RANGE = 10..48
 val LINE_HEIGHT_RANGE = 0.8..3.0
 
 data class FontFamilyOption(@StringRes val label: Int, val value: String?)

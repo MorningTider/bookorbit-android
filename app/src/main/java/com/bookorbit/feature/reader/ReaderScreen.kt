@@ -7,6 +7,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -30,6 +31,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.Slider
 import android.widget.Toast
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -40,6 +43,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
@@ -67,6 +72,7 @@ fun ReaderScreen(
     var highlightsVisible by remember { mutableStateOf(false) }
     var searchVisible by remember { mutableStateOf(false) }
     var noteDialog by remember { mutableStateOf<String?>(null) }
+    var seekFraction by remember { mutableStateOf<Float?>(null) }
 
     val context = LocalContext.current
 
@@ -84,9 +90,29 @@ fun ReaderScreen(
 
     // Keep the screen on while reading.
     val view = LocalView.current
-    DisposableEffect(Unit) {
-        view.keepScreenOn = true
-        onDispose { view.keepScreenOn = false }
+    DisposableEffect(ui.settings.keepScreenOn) {
+        val previous = view.keepScreenOn
+        view.keepScreenOn = ui.settings.keepScreenOn
+        onDispose { view.keepScreenOn = previous }
+    }
+
+    val activity = context.findActivity()
+    DisposableEffect(activity) {
+        val previous = activity?.window?.attributes?.screenBrightness
+        onDispose {
+            if (activity != null && previous != null) activity.window.attributes = activity.window.attributes.apply { screenBrightness = previous }
+        }
+    }
+    LaunchedEffect(ui.settings.brightness) {
+        activity?.window?.let { window -> window.attributes = window.attributes.apply {
+            screenBrightness = ui.settings.brightness.toFloat()
+        } }
+    }
+    LaunchedEffect(ui.settings, ui.fontFaces, ui.loaded) {
+        if (ui.loaded) {
+            controller.setFonts(ui.fontFaces)
+            controller.applyStyles(ui.settings)
+        }
     }
 
     LaunchedEffect(Unit) {
@@ -147,6 +173,7 @@ fun ReaderScreen(
         if (!rendererFailed) {
             ReaderWebView(
                 controller = controller,
+                fontRepository = vm.fontRepository,
                 modifier = Modifier.fillMaxSize(),
                 onRendererGone = {
                     rendererFailed = true
@@ -191,16 +218,28 @@ fun ReaderScreen(
                 }
             }
 
-            Box(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .fillMaxWidth()
-                    .background(Color(0xCC0A0A0A))
-                    .navigationBarsPadding()
-                    .padding(vertical = 6.dp),
-                contentAlignment = Alignment.Center,
+            Column(
+                modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth()
+                    .background(Color(0xEE0A0A0A)).navigationBarsPadding().padding(horizontal = 16.dp),
             ) {
-                Text("${ui.percentage}%", color = Color.White.copy(alpha = 0.8f))
+                Slider(
+                    value = seekFraction ?: (ui.percentage / 100f),
+                    onValueChange = { seekFraction = it },
+                    onValueChangeFinished = {
+                        seekFraction?.let { controller.goToFraction(it.toDouble()) }
+                        seekFraction = null
+                    },
+                    enabled = ui.loaded,
+                    modifier = Modifier.semantics { contentDescription = context.getString(R.string.rs_progress) },
+                )
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    TextButton(onClick = { tocVisible = true }) { Text(stringResource(R.string.contents), color = Color.White) }
+                    Text("${((seekFraction ?: (ui.percentage / 100f)) * 100).toInt()}%", color = Color.White, modifier = Modifier.weight(1f))
+                    TextButton(onClick = { vm.updateSettings(ui.settings.copy(isDark = !ui.settings.isDark)) }) {
+                        Text(stringResource(if (ui.settings.isDark) R.string.light else R.string.dark), color = Color.White)
+                    }
+                    TextButton(onClick = { settingsVisible = true }) { Text(stringResource(R.string.settings), color = Color.White) }
+                }
             }
         }
 
@@ -319,6 +358,11 @@ fun ReaderScreen(
     if (settingsVisible) {
         ReaderSettingsSheet(
             settings = ui.settings,
+            fonts = ui.fonts,
+            fontsLoading = ui.fontsLoading,
+            downloadingFont = ui.downloadingFont,
+            onFont = vm::selectFont,
+            onRefreshFonts = vm::refreshFonts,
             onChange = { updated ->
                 vm.updateSettings(updated)
                 controller.applyStyles(updated)

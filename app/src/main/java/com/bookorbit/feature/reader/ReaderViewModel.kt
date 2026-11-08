@@ -16,6 +16,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
 import javax.inject.Inject
 import kotlin.math.roundToInt
 
@@ -29,6 +31,7 @@ class ReaderViewModel @Inject constructor(
     private val source: ReaderSource,
     private val progress: ReaderProgressRepository,
     private val settingsStore: ReaderSettingsStore,
+    val fontRepository: ReaderFontRepository,
     private val sessions: ReadingSessionTracker,
     private val annotationRepo: ReaderAnnotationRepository,
     private val bookmarkRepo: ReaderBookmarkRepository,
@@ -59,6 +62,10 @@ class ReaderViewModel @Inject constructor(
         val title: String? = null,
         val resolved: ResolvedOpen? = null,
         val settings: ReaderSettings = ReaderSettings(),
+        val fonts: List<ReaderFontFamily> = emptyList(),
+        val fontFaces: List<ReaderFontFace> = emptyList(),
+        val fontsLoading: Boolean = false,
+        val downloadingFont: String? = null,
         val toc: List<TocItem> = emptyList(),
         val chapterTitle: String? = null,
         val percentage: Int = 0,
@@ -88,6 +95,8 @@ class ReaderViewModel @Inject constructor(
     private val _ui = MutableStateFlow(UiState())
     val ui = _ui.asStateFlow()
 
+    private var settingsSaveJob: Job? = null
+    private var fontLoadJob: Job? = null
     private var lastSaved = 0L
     private var pending: Pair<String?, Double>? = null
 
@@ -105,6 +114,7 @@ class ReaderViewModel @Inject constructor(
             // Coach the paginated tap-zones once (they're invisible by design).
             val showHint = settings.flow == "paginated" && !settingsStore.hasSeenPagingHint()
             _ui.update { it.copy(settings = settings, showPagingHint = showHint) }
+            refreshFonts()
 
             // Fall back to the offline-downloaded copy when the network is unavailable.
             val book = runCatching { bookRepo.detail(bookId) }.getOrNull() ?: downloads.cachedBook(bookId)
@@ -117,7 +127,6 @@ class ReaderViewModel @Inject constructor(
             try {
                 val resolved = source.resolve(book)
                 val initial = progress.resolveInitial(resolved.fileId)
-                sessions.beginReading(resolved.fileId, initial.fraction?.let { it * 100 })
                 _ui.update {
                     it.copy(
                         loadingFile = false,
@@ -131,6 +140,7 @@ class ReaderViewModel @Inject constructor(
     }
 
     fun onLoaded(toc: List<TocItem>, title: String?) {
+        _ui.value.resolved?.let { sessions.beginReading(it.fileId, it.initial.fraction?.let { fraction -> fraction * 100 }) }
         _ui.update { it.copy(loaded = true, toc = toc, chapterTitle = it.chapterTitle ?: title) }
     }
 
@@ -311,7 +321,50 @@ class ReaderViewModel @Inject constructor(
 
     fun updateSettings(settings: ReaderSettings) {
         _ui.update { it.copy(settings = settings) }
-        viewModelScope.launch { settingsStore.save(settings) }
+        settingsSaveJob?.cancel()
+        settingsSaveJob = viewModelScope.launch { settingsStore.save(settings) }
+    }
+
+    fun refreshFonts() {
+        fontLoadJob?.cancel()
+        fontLoadJob = viewModelScope.launch {
+            _ui.update { it.copy(fontsLoading = true) }
+            try {
+                for (refresh in listOf(false, true)) {
+                    val fonts = fontRepository.catalog(refresh)
+                    val selected = fonts.firstOrNull { it.cssFamily == _ui.value.settings.fontFamily }
+                    val faces = fontRepository.cachedFaces(selected)
+                    _ui.update { it.copy(fonts = fonts, fontFaces = faces) }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _ui.update { it.copy(message = UiText.of(R.string.rs_fonts_error)) }
+            } finally {
+                _ui.update { it.copy(fontsLoading = false) }
+            }
+        }
+    }
+
+    fun selectFont(font: ReaderFontFamily) {
+        if (_ui.value.downloadingFont != null) return
+        viewModelScope.launch {
+            _ui.update { it.copy(downloadingFont = font.cssFamily) }
+            try {
+                fontRepository.download(font)
+                val faces = fontRepository.cachedFaces(font)
+                _ui.update { state -> state.copy(fontFaces = faces, fonts = state.fonts.map {
+                    if (it.cssFamily == font.cssFamily) it.copy(downloaded = true) else it
+                }) }
+                updateSettings(_ui.value.settings.copy(fontFamily = font.cssFamily))
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _ui.update { it.copy(message = UiText.of(R.string.rs_fonts_error)) }
+            } finally {
+                _ui.update { it.copy(downloadingFont = null) }
+            }
+        }
     }
 
     fun dismissPagingHint() {
@@ -329,7 +382,7 @@ class ReaderViewModel @Inject constructor(
         val p = pending ?: return
         pending = null
         lastSaved = System.currentTimeMillis()
-        viewModelScope.launch { progress.report(fileId, p.first, p.second) }
+        progress.enqueueReport(fileId, p.first, p.second)
     }
 
     override fun onCleared() {

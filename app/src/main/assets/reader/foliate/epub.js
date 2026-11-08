@@ -1,3 +1,4 @@
+import { objectGroupBy, mapGroupBy } from './grouping-compat.js'
 import * as CFI from './epubcfi.js'
 
 const NS = {
@@ -184,7 +185,7 @@ const getMetadata = (opf) => {
   const $metadata = $(opf.documentElement, 'metadata')
 
   // first pass: convert to JS objects
-  const els = Object.groupBy($metadata.children, (el) =>
+  const els = objectGroupBy($metadata.children, (el) =>
     el.namespaceURI === NS.DC ? 'dc' : el.namespaceURI === NS.OPF && el.localName === 'meta' ? (el.hasAttribute('name') ? 'legacyMeta' : 'meta') : '',
   )
   const baseLang = $metadata.getAttribute('xml:lang') ?? opf.documentElement.getAttribute('xml:lang') ?? 'und'
@@ -206,13 +207,13 @@ const getMetadata = (opf) => {
       ),
     }
   }
-  const refines = Map.groupBy(els.meta ?? [], (el) => el.getAttribute('refines'))
+  const refines = mapGroupBy(els.meta ?? [], (el) => el.getAttribute('refines'))
   const getProperties = (el) => {
     const els = refines.get(el ? '#' + el.getAttribute('id') : null)
     if (!els) return null
-    return Object.groupBy(els.map(parse), (x) => x.property)
+    return objectGroupBy(els.map(parse), (x) => x.property)
   }
-  const dc = Object.fromEntries(Object.entries(Object.groupBy(els.dc, (el) => el.localName)).map(([name, els]) => [name, els.map(parse)]))
+  const dc = Object.fromEntries(Object.entries(objectGroupBy(els.dc, (el) => el.localName)).map(([name, els]) => [name, els.map(parse)]))
   const properties = getProperties() ?? {}
   const legacyMeta = Object.fromEntries(els.legacyMeta?.map((el) => [el.getAttribute('name'), el.getAttribute('content')]) ?? [])
 
@@ -264,7 +265,7 @@ const getMetadata = (opf) => {
     }
     return value
   }
-  const belongsTo = Object.groupBy(properties['belongs-to-collection'] ?? [], (x) =>
+  const belongsTo = objectGroupBy(properties['belongs-to-collection'] ?? [], (x) =>
     prop(x, 'collection-type') === 'series' ? 'series' : 'collection',
   )
   const mainTitle = dc.title?.find((x) => prop(x, 'title-type') === 'main') ?? dc.title?.[0]

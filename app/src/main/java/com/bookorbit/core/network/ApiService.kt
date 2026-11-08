@@ -184,6 +184,16 @@ interface ApiService {
     @DELETE("books/{bookId}/annotations/{id}")
     suspend fun deleteAnnotation(@Path("bookId") bookId: Int, @Path("id") id: Int)
 
+    @GET("server-fonts")
+    suspend fun getServerFonts(): List<com.bookorbit.feature.reader.ReaderFont>
+
+    @GET("fonts")
+    suspend fun getUserFonts(): List<com.bookorbit.feature.reader.ReaderFont>
+
+    @Streaming
+    @GET("{collection}/{fontId}/file")
+    suspend fun serveReaderFont(@Path("collection") collection: String, @Path("fontId") fontId: Int): ResponseBody
+
     @POST("books/files/{fileId}/sessions")
     suspend fun saveReadingSession(
         @Path("fileId") fileId: Int,

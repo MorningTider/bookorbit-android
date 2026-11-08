@@ -12,11 +12,13 @@
  * asset served by WebViewAssetLoader.
  */
 import './foliate/view.js';
+import { fontFaceCSS, typographyCSS } from './reader-styles.js';
 
 const container = document.getElementById('reader');
 
 /** Latest applied render settings, re-applied on every section 'load'. */
 let currentSettings = null;
+let fontFaces = [];
 /** The <foliate-view> element, once created. */
 let view = null;
 /** Base64 transfer state for the book currently being opened. */
@@ -56,6 +58,11 @@ const DEFAULT_SETTINGS = {
   fontSize: 16,
   lineHeight: 1.5,
   fontFamily: null,
+  fontWeight: 400,
+  paragraphSpacing: 0.6,
+  letterSpacing: 0,
+  paragraphIndent: false,
+  sidePadding: 20,
   maxColumnCount: 2,
   gap: 0.05,
   maxInlineSize: 720,
@@ -82,10 +89,12 @@ function generateCSS(s) {
     : '';
   return `
     @namespace epub "http://www.idpf.org/2007/ops";
+    ${fontFaceCSS(fontFaces)}
     @media print { html { column-width: auto !important; height: auto !important; width: auto !important; } }
     @media screen {
       html { color-scheme: ${dark ? 'dark' : 'light'}; color: ${mode.fg}; font-size: ${s.fontSize}px; }
       ${fontFamilyRule}
+      ${typographyCSS(s)}
       a:any-link { color: ${mode.link}; text-underline-offset: .1em; }
       aside[epub|type~="footnote"] { display: none; }
     }
@@ -116,7 +125,7 @@ function applyStyles(settings) {
   const r = view.renderer;
   if (!r) return;
   r.setAttribute('max-column-count', String(s.maxColumnCount));
-  r.setAttribute('gap', `${s.gap * 100}%`);
+  r.setAttribute('gap', `${s.sidePadding * 2}px`);
   r.setAttribute('max-inline-size', `${s.maxInlineSize}px`);
   r.setAttribute('max-block-size', `${s.maxBlockSize}px`);
   if (s.flow === 'paginated') r.setAttribute('margin', '40px');
@@ -548,6 +557,10 @@ window.__readerCommand = (json) => {
       break;
     case 'next':
       view.next?.();
+      break;
+    case 'setFonts':
+      fontFaces = Array.isArray(cmd.faces) ? cmd.faces : [];
+      applyStyles(currentSettings);
       break;
     case 'applyStyles':
       applyStyles(cmd.settings);

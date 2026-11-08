@@ -36,6 +36,7 @@ class ReadingSessionRecorder(private val maxGapMs: Long) {
     private var accruedMs = 0L
     private var activeSince: Long? = null
     private var inactiveSince: Long? = null
+    private var activeUntil = 0L
 
     val isOpen: Boolean get() = key != null
 
@@ -56,6 +57,7 @@ class ReadingSessionRecorder(private val maxGapMs: Long) {
         endProgress = progress
         accruedMs = 0
         activeSince = nowMs
+        activeUntil = nowMs + maxGapMs
         inactiveSince = null
     }
 
@@ -63,6 +65,7 @@ class ReadingSessionRecorder(private val maxGapMs: Long) {
     fun progress(percent: Double, nowMs: Long) {
         if (!isOpen) return
         accrue(nowMs)
+        activeUntil = nowMs + maxGapMs
         endProgress = percent.coerceIn(0.0, 100.0)
     }
 
@@ -70,7 +73,10 @@ class ReadingSessionRecorder(private val maxGapMs: Long) {
     fun setActive(active: Boolean, nowMs: Long) {
         if (!isOpen) return
         if (active) {
-            if (activeSince == null) activeSince = nowMs
+            if (activeSince == null) {
+                activeSince = nowMs
+                activeUntil = nowMs + maxGapMs
+            }
             inactiveSince = null
         } else {
             accrue(nowMs)
@@ -109,7 +115,7 @@ class ReadingSessionRecorder(private val maxGapMs: Long) {
 
     private fun accrue(nowMs: Long) {
         val since = activeSince ?: return
-        accruedMs += (nowMs - since).coerceIn(0L, maxGapMs)
+        accruedMs += (minOf(nowMs, activeUntil) - since).coerceAtLeast(0L)
         activeSince = nowMs
     }
 }
