@@ -1,8 +1,6 @@
 package com.bookorbit.feature.reader
 
-import com.bookorbit.ui.asString
-import androidx.compose.ui.res.stringResource
-import com.bookorbit.R
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -12,28 +10,21 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.FormatQuote
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material.icons.filled.TouchApp
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.Slider
-import android.widget.Toast
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -43,24 +34,30 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.repeatOnLifecycle
+import com.bookorbit.R
+import com.bookorbit.ui.asString
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 @Composable
-fun ReaderScreen(
-    onBack: () -> Unit,
-    vm: ReaderViewModel = hiltViewModel(),
-) {
+fun ReaderScreen(onBack: () -> Unit, vm: ReaderViewModel = hiltViewModel()) {
     val ui by vm.ui.collectAsStateWithLifecycle()
     val controller = remember { ReaderController() }
     var ready by remember { mutableStateOf(false) }
@@ -72,15 +69,79 @@ fun ReaderScreen(
     var highlightsVisible by remember { mutableStateOf(false) }
     var searchVisible by remember { mutableStateOf(false) }
     var noteDialog by remember { mutableStateOf<String?>(null) }
-    var seekFraction by remember { mutableStateOf<Float?>(null) }
+    var autoReading by remember { mutableStateOf(false) }
+    var readerTop by remember { mutableStateOf(0.0) }
+    var statusClock by remember { mutableStateOf("") }
+    var batteryPercent by remember { mutableStateOf<Int?>(null) }
 
     val context = LocalContext.current
+    val density = LocalDensity.current.density
+    val owner = LocalLifecycleOwner.current
+    DisposableEffect(owner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP) {
+                autoReading = false
+                vm.flush()
+            }
+        }
+        owner.lifecycle.addObserver(observer)
+        onDispose {
+            owner.lifecycle.removeObserver(observer)
+            controller.onVolumeKey = null
+            controller.volumeKeyPagingEnabled = false
+            controller.autoRead(false, 15)
+        }
+    }
+    LaunchedEffect(ui.settings.showReadingStatus, owner) {
+        if (ui.settings.showReadingStatus) {
+            owner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                while (true) {
+                    statusClock =
+                        android.text.format.DateFormat.getTimeFormat(context)
+                            .format(java.util.Date())
+                    val battery =
+                        context.registerReceiver(
+                            null,
+                            android.content.IntentFilter(
+                                android.content.Intent.ACTION_BATTERY_CHANGED
+                            ),
+                        )
+                    val level =
+                        battery?.getIntExtra(android.os.BatteryManager.EXTRA_LEVEL, -1) ?: -1
+                    val scale =
+                        battery?.getIntExtra(android.os.BatteryManager.EXTRA_SCALE, -1) ?: -1
+                    batteryPercent = if (level >= 0 && scale > 0) level * 100 / scale else null
+                    kotlinx.coroutines.delay(60_000)
+                }
+            }
+        }
+    }
+    LaunchedEffect(autoReading, ui.settings.autoPageIntervalSeconds, ui.loaded) {
+        controller.autoRead(autoReading && ui.loaded, ui.settings.autoPageIntervalSeconds)
+    }
+    controller.volumeKeyPagingEnabled =
+        ui.settings.volumeKeyPaging &&
+            ui.loaded &&
+            !settingsVisible &&
+            !tocVisible &&
+            !searchVisible &&
+            !highlightsVisible
+    controller.onVolumeKey = { next ->
+        if (controller.volumeKeyPagingEnabled) {
+            autoReading = false
+            if (next) controller.next() else controller.prev()
+            true
+        } else false
+    }
 
     // Taps arrive from the page (so text selection keeps working): edges turn the page, the middle
     // toggles the chrome, and any tap while the highlight toolbar is open just dismisses it.
     val onTap = remember { mutableStateOf<(Double) -> Unit>({}) }
     onTap.value = { x ->
+        val wasAutoReading = autoReading
+        autoReading = false
         when {
+            wasAutoReading -> chromeVisible = true
             ui.toolbar != null -> vm.dismissToolbar()
             ui.settings.flow == "paginated" && x < 0.3 -> controller.prev()
             ui.settings.flow == "paginated" && x > 0.7 -> controller.next()
@@ -100,13 +161,16 @@ fun ReaderScreen(
     DisposableEffect(activity) {
         val previous = activity?.window?.attributes?.screenBrightness
         onDispose {
-            if (activity != null && previous != null) activity.window.attributes = activity.window.attributes.apply { screenBrightness = previous }
+            if (activity != null && previous != null)
+                activity.window.attributes =
+                    activity.window.attributes.apply { screenBrightness = previous }
         }
     }
     LaunchedEffect(ui.settings.brightness) {
-        activity?.window?.let { window -> window.attributes = window.attributes.apply {
-            screenBrightness = ui.settings.brightness.toFloat()
-        } }
+        activity?.window?.let { window ->
+            window.attributes =
+                window.attributes.apply { screenBrightness = ui.settings.brightness.toFloat() }
+        }
     }
     LaunchedEffect(ui.settings, ui.fontFaces, ui.loaded) {
         if (ui.loaded) {
@@ -120,13 +184,22 @@ fun ReaderScreen(
             when (event) {
                 is ReaderEvent.Ready -> ready = true
                 is ReaderEvent.Loaded -> vm.onLoaded(event.toc, event.title)
-                is ReaderEvent.Relocate -> vm.onRelocate(event.cfi, event.fraction, event.chapterTitle)
-                is ReaderEvent.Error -> vm.onError(event.message)
+                is ReaderEvent.Relocate ->
+                    vm.onRelocate(event.cfi, event.fraction, event.chapterTitle, event.chapterHref)
+                ReaderEvent.AutoReadStopped -> autoReading = false
+                ReaderEvent.PageTurnRequested -> Unit
+                is ReaderEvent.Error -> {
+                    autoReading = false
+                    vm.onError(event.message)
+                }
                 is ReaderEvent.Tap -> onTap.value(event.x)
                 is ReaderEvent.SearchResults -> vm.onSearchResults(event.label, event.hits)
                 is ReaderEvent.SearchProgress -> vm.onSearchProgress(event.progress)
                 is ReaderEvent.SearchDone -> vm.onSearchDone(event.total, event.capped)
-                is ReaderEvent.Selection -> vm.onSelection(event.text, event.cfi, event.rect)
+                is ReaderEvent.Selection -> {
+                    autoReading = false
+                    vm.onSelection(event.text, event.cfi, event.rect)
+                }
                 ReaderEvent.SelectionCleared -> vm.onSelectionCleared()
                 is ReaderEvent.AnnotationTap -> vm.onAnnotationTap(event.cfi, event.rect)
             }
@@ -155,7 +228,10 @@ fun ReaderScreen(
         if (ready && resolved != null && !opened && !rendererFailed) {
             opened = true
             withContext(Dispatchers.IO) {
-                controller.open(openParamsFor(resolved.ref, resolved.format, resolved.initial, ui.settings), context)
+                controller.open(
+                    openParamsFor(resolved.ref, resolved.format, resolved.initial, ui.settings),
+                    context,
+                )
             }
         }
     }
@@ -165,97 +241,134 @@ fun ReaderScreen(
     val showChrome = chromeVisible
     val onSurface = if (ui.settings.isDark) Color.White else Color.Black
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(surface),
-    ) {
-        if (!rendererFailed) {
-            ReaderWebView(
-                controller = controller,
-                fontRepository = vm.fontRepository,
-                modifier = Modifier.fillMaxSize(),
-                onRendererGone = {
-                    rendererFailed = true
-                    vm.onRendererGone()
+    Box(modifier = Modifier.fillMaxSize().background(surface)) {
+        val palette = readerPalette(ui.settings)
+        Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
+            if (ui.settings.showReadingStatus) {
+                Text(
+                    ui.chapterTitle ?: ui.title.orEmpty(),
+                    color = palette.text.copy(alpha = 0.55f),
+                    style = androidx.compose.material3.MaterialTheme.typography.labelSmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(horizontal = 22.dp, vertical = 8.dp),
+                )
+            }
+            Box(
+                Modifier.weight(1f).fillMaxWidth().onGloballyPositioned {
+                    readerTop = it.positionInRoot().y.toDouble() / density
+                }
+            ) {
+                if (!rendererFailed) {
+                    ReaderWebView(
+                        controller = controller,
+                        fontRepository = vm.fontRepository,
+                        modifier = Modifier.fillMaxSize(),
+                        onRendererGone = {
+                            rendererFailed = true
+                            autoReading = false
+                            vm.onRendererGone()
+                        },
+                    )
+                }
+            }
+            if (ui.settings.showReadingStatus) {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 8.dp)) {
+                    Text(
+                        statusClock,
+                        color = palette.text.copy(alpha = 0.55f),
+                        style = androidx.compose.material3.MaterialTheme.typography.labelSmall,
+                    )
+                    Text(
+                        "${ui.percentage}%",
+                        modifier = Modifier.weight(1f),
+                        color = palette.text.copy(alpha = 0.55f),
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        style = androidx.compose.material3.MaterialTheme.typography.labelSmall,
+                    )
+                    Text(
+                        batteryPercent?.let { stringResource(R.string.rs_battery, it) }.orEmpty(),
+                        color = palette.text.copy(alpha = 0.55f),
+                        style = androidx.compose.material3.MaterialTheme.typography.labelSmall,
+                    )
+                }
+            }
+        }
+        if (showChrome) {
+            ReaderChrome(
+                title = ui.title.orEmpty(),
+                chapterTitle = ui.chapterTitle,
+                percentage = ui.percentage,
+                loaded = ui.loaded,
+                settings = ui.settings,
+                onBack = onBack,
+                onSearch = {
+                    autoReading = false
+                    searchVisible = true
+                },
+                onHighlights = {
+                    autoReading = false
+                    vm.loadBookmarks()
+                    highlightsVisible = true
+                },
+                onContents = {
+                    autoReading = false
+                    tocVisible = true
+                },
+                onSettings = {
+                    autoReading = false
+                    settingsVisible = true
+                },
+                onNight = { vm.updateSettings(ui.settings.copy(isDark = !ui.settings.isDark)) },
+                onSeek = {
+                    autoReading = false
+                    controller.goToFraction(it)
+                },
+                onPreviousChapter = {
+                    autoReading = false
+                    controller.previousChapter()
+                },
+                onNextChapter = {
+                    autoReading = false
+                    controller.nextChapter()
                 },
             )
         }
-
-        if (showChrome) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(Color(0xCC0A0A0A))
-                    .statusBarsPadding()
-                    .padding(horizontal = 4.dp, vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
+        if (autoReading) {
+            Button(
+                onClick = {
+                    autoReading = false
+                    chromeVisible = true
+                },
+                modifier =
+                    Modifier.align(Alignment.BottomCenter)
+                        .navigationBarsPadding()
+                        .padding(bottom = 30.dp),
             ) {
-                IconButton(onClick = onBack) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.back), tint = Color.White)
-                }
-                Text(
-                    ui.chapterTitle ?: ui.title ?: "",
-                    color = Color.White,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f),
-                )
-                IconButton(onClick = { searchVisible = true }) {
-                    Icon(Icons.Filled.Search, contentDescription = stringResource(R.string.search_in_book), tint = Color.White)
-                }
-                IconButton(onClick = {
-                    vm.loadBookmarks()
-                    highlightsVisible = true
-                }) {
-                    Icon(Icons.Filled.FormatQuote, contentDescription = stringResource(R.string.highlights), tint = Color.White)
-                }
-                IconButton(onClick = { tocVisible = true }) {
-                    Icon(Icons.AutoMirrored.Filled.List, contentDescription = stringResource(R.string.contents), tint = Color.White)
-                }
-                IconButton(onClick = { settingsVisible = true }) {
-                    Icon(Icons.Filled.TextFields, contentDescription = stringResource(R.string.settings), tint = Color.White)
-                }
-            }
-
-            Column(
-                modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth()
-                    .background(Color(0xEE0A0A0A)).navigationBarsPadding().padding(horizontal = 16.dp),
-            ) {
-                Slider(
-                    value = seekFraction ?: (ui.percentage / 100f),
-                    onValueChange = { seekFraction = it },
-                    onValueChangeFinished = {
-                        seekFraction?.let { controller.goToFraction(it.toDouble()) }
-                        seekFraction = null
-                    },
-                    enabled = ui.loaded,
-                    modifier = Modifier.semantics { contentDescription = context.getString(R.string.rs_progress) },
-                )
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                    TextButton(onClick = { tocVisible = true }) { Text(stringResource(R.string.contents), color = Color.White) }
-                    Text("${((seekFraction ?: (ui.percentage / 100f)) * 100).toInt()}%", color = Color.White, modifier = Modifier.weight(1f))
-                    TextButton(onClick = { vm.updateSettings(ui.settings.copy(isDark = !ui.settings.isDark)) }) {
-                        Text(stringResource(if (ui.settings.isDark) R.string.light else R.string.dark), color = Color.White)
-                    }
-                    TextButton(onClick = { settingsVisible = true }) { Text(stringResource(R.string.settings), color = Color.White) }
-                }
+                Text(stringResource(R.string.rs_stop_auto_read))
             }
         }
 
         ui.toolbar?.let { target ->
-            val annotation = target.annotationId?.let { id -> ui.annotations.firstOrNull { it.id == id } }
+            val annotation =
+                target.annotationId?.let { id -> ui.annotations.firstOrNull { it.id == id } }
             val screenWidth = LocalConfiguration.current.screenWidthDp
             val toolbarWidth = if (annotation != null) 340 else 290
             val rect = target.rect
             val centerX = rect?.let { (it.left + it.right) / 2 } ?: (screenWidth / 2.0)
-            val x = (centerX - toolbarWidth / 2).coerceIn(8.0, (screenWidth - toolbarWidth - 8).coerceAtLeast(8).toDouble())
-            // Above the selection when there's room, otherwise below it (clear of the selection handles).
-            val y = when {
-                rect == null -> 120.0
-                rect.top > 150 -> rect.top - 60
-                else -> rect.bottom + 36
-            }
+            val x =
+                (centerX - toolbarWidth / 2).coerceIn(
+                    8.0,
+                    (screenWidth - toolbarWidth - 8).coerceAtLeast(8).toDouble(),
+                )
+            // Above the selection when there's room, otherwise below it (clear of the selection
+            // handles).
+            val y =
+                when {
+                    rect == null -> 120.0
+                    rect.top + readerTop > 150 -> rect.top + readerTop - 60
+                    else -> rect.bottom + readerTop + 36
+                }
             HighlightToolbar(
                 currentColor = annotation?.color,
                 onColor = { vm.highlight(it) },
@@ -266,13 +379,19 @@ fun ReaderScreen(
         }
 
         if ((!ui.loaded || !ready) && ui.error == null && !rendererFailed) {
-            Box(modifier = Modifier.fillMaxSize().background(surface), contentAlignment = Alignment.Center) {
+            Box(
+                modifier = Modifier.fillMaxSize().background(surface),
+                contentAlignment = Alignment.Center,
+            ) {
                 CircularProgressIndicator()
             }
         }
 
         ui.error?.let { message ->
-            Box(modifier = Modifier.fillMaxSize().background(surface), contentAlignment = Alignment.Center) {
+            Box(
+                modifier = Modifier.fillMaxSize().background(surface),
+                contentAlignment = Alignment.Center,
+            ) {
                 Column2(message = message.asString(), onBack = onBack, tint = onSurface)
             }
         }
@@ -284,11 +403,15 @@ fun ReaderScreen(
                 verticalArrangement = androidx.compose.foundation.layout.Arrangement.Center,
             ) {
                 Text(stringResource(R.string.reader_renderer_unavailable), color = onSurface)
-                Button(onClick = {
-                    ready = false
-                    opened = false
-                    rendererFailed = false
-                }) { Text(stringResource(R.string.retry)) }
+                Button(
+                    onClick = {
+                        ready = false
+                        opened = false
+                        rendererFailed = false
+                    }
+                ) {
+                    Text(stringResource(R.string.retry))
+                }
                 Button(onClick = onBack) { Text(stringResource(R.string.back)) }
             }
         }
@@ -302,6 +425,14 @@ fun ReaderScreen(
     if (tocVisible) {
         ReaderTocSheet(
             toc = ui.toc,
+            settings = ui.settings,
+            bookTitle = ui.title.orEmpty(),
+            currentHref = ui.chapterHref,
+            onNight = { vm.updateSettings(ui.settings.copy(isDark = !ui.settings.isDark)) },
+            onSettings = {
+                tocVisible = false
+                settingsVisible = true
+            },
             onSelect = { href ->
                 tocVisible = false
                 controller.goTo(href)
@@ -363,6 +494,15 @@ fun ReaderScreen(
             downloadingFont = ui.downloadingFont,
             onFont = vm::selectFont,
             onRefreshFonts = vm::refreshFonts,
+            onContents = {
+                settingsVisible = false
+                tocVisible = true
+            },
+            onStartAutoRead = {
+                settingsVisible = false
+                chromeVisible = false
+                autoReading = true
+            },
             onChange = { updated ->
                 vm.updateSettings(updated)
                 controller.applyStyles(updated)
@@ -376,14 +516,26 @@ fun ReaderScreen(
 private fun PagingHintOverlay(onDismiss: () -> Unit) {
     val interaction = remember { MutableInteractionSource() }
     Row(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color(0xE60A0A0A))
-            .clickable(interactionSource = interaction, indication = null, onClick = onDismiss),
+        modifier =
+            Modifier.fillMaxSize()
+                .background(Color(0xE60A0A0A))
+                .clickable(interactionSource = interaction, indication = null, onClick = onDismiss)
     ) {
-        HintZone(weight = 0.3f, icon = Icons.Filled.ChevronLeft, label = stringResource(R.string.previous_page))
-        HintZone(weight = 0.4f, icon = Icons.Filled.TouchApp, label = stringResource(R.string.tap_for_menu))
-        HintZone(weight = 0.3f, icon = Icons.Filled.ChevronRight, label = stringResource(R.string.next_page))
+        HintZone(
+            weight = 0.3f,
+            icon = Icons.Filled.ChevronLeft,
+            label = stringResource(R.string.previous_page),
+        )
+        HintZone(
+            weight = 0.4f,
+            icon = Icons.Filled.TouchApp,
+            label = stringResource(R.string.tap_for_menu),
+        )
+        HintZone(
+            weight = 0.3f,
+            icon = Icons.Filled.ChevronRight,
+            label = stringResource(R.string.next_page),
+        )
     }
 }
 
@@ -394,9 +546,7 @@ private fun androidx.compose.foundation.layout.RowScope.HintZone(
     label: String,
 ) {
     androidx.compose.foundation.layout.Column(
-        modifier = Modifier
-            .weight(weight)
-            .fillMaxHeight(),
+        modifier = Modifier.weight(weight).fillMaxHeight(),
         verticalArrangement = androidx.compose.foundation.layout.Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
@@ -416,10 +566,10 @@ private fun androidx.compose.foundation.layout.RowScope.HintZone(
 private fun androidx.compose.foundation.layout.RowScope.TapZone(weight: Float, onTap: () -> Unit) {
     val interaction = remember { MutableInteractionSource() }
     Box(
-        modifier = Modifier
-            .weight(weight)
-            .fillMaxHeight()
-            .clickable(interactionSource = interaction, indication = null, onClick = onTap),
+        modifier =
+            Modifier.weight(weight)
+                .fillMaxHeight()
+                .clickable(interactionSource = interaction, indication = null, onClick = onTap)
     )
 }
 
@@ -431,7 +581,11 @@ private fun Column2(message: String, onBack: () -> Unit, tint: Color) {
     ) {
         Text(message, color = tint)
         IconButton(onClick = onBack) {
-            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.back), tint = tint)
+            Icon(
+                Icons.AutoMirrored.Filled.ArrowBack,
+                contentDescription = stringResource(R.string.back),
+                tint = tint,
+            )
         }
     }
 }

@@ -68,6 +68,7 @@ class ReaderViewModel @Inject constructor(
         val downloadingFont: String? = null,
         val toc: List<TocItem> = emptyList(),
         val chapterTitle: String? = null,
+        val chapterHref: String? = null,
         val percentage: Int = 0,
         val loaded: Boolean = false,
         val showPagingHint: Boolean = false,
@@ -161,10 +162,11 @@ class ReaderViewModel @Inject constructor(
         }
     }
 
-    fun onRelocate(cfi: String?, fraction: Double?, chapterTitle: String?) {
+    fun onRelocate(cfi: String?, fraction: Double?, chapterTitle: String?, chapterHref: String? = null) {
         _ui.update {
             it.copy(
                 chapterTitle = chapterTitle ?: it.chapterTitle,
+                chapterHref = chapterHref ?: it.chapterHref,
                 percentage = fraction?.let { f -> (f * 100).roundToInt() } ?: it.percentage,
             )
         }

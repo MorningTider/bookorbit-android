@@ -54,8 +54,7 @@ private const val CHUNK_BYTES = CHUNK_CHARS / 4 * 3
  * protocol, buffering an open requested before the bridge signals ready.
  */
 class ReaderController {
-    @Volatile
-    private var webView: WebView? = null
+    @Volatile private var webView: WebView? = null
 
     /** Set by the screen to receive parsed reader events. */
     var listener: ((ReaderEvent) -> Unit)? = null
@@ -73,7 +72,14 @@ class ReaderController {
         if (webView !== view) return
         val event = ReaderBridge.parseEvent(data) ?: return
         Handler(Looper.getMainLooper()).post {
-            if (webView === view) listener?.invoke(event)
+            if (webView === view) {
+                when (event) {
+                    is ReaderEvent.Relocate -> curlHost?.relocated()
+                    ReaderEvent.PageTurnRequested -> next()
+                    else -> Unit
+                }
+                listener?.invoke(event)
+            }
         }
     }
 
@@ -83,24 +89,106 @@ class ReaderController {
      */
     fun open(params: OpenParams, context: Context) = runOpen(params, context)
 
-    fun goTo(target: String) = command(buildJsonObject { put("type", "goTo"); put("target", target) }.toString())
-    fun goToFraction(value: Double) = command(buildJsonObject { put("type", "goToFraction"); put("value", value) }.toString())
-    fun next() = command(buildJsonObject { put("type", "next") }.toString())
-    fun prev() = command(buildJsonObject { put("type", "prev") }.toString())
+    fun goTo(target: String) =
+        command(
+            buildJsonObject {
+                    put("type", "goTo")
+                    put("target", target)
+                }
+                .toString()
+        )
 
-    /** Replace the set of highlights drawn in the page. Only CFI-anchored, resolvable ones are drawn. */
-    fun setAnnotations(items: List<BookAnnotation>) {
-        val arr = kotlinx.serialization.json.buildJsonArray {
-            for (a in items) {
-                val cfi = a.cfi ?: continue
-                if (a.positionStatus == "failed") continue
-                add(buildJsonObject { put("cfi", cfi); put("color", a.color); put("style", a.style) })
-            }
-        }
-        command(buildJsonObject { put("type", "setAnnotations"); put("items", arr) }.toString())
+    fun goToFraction(value: Double) =
+        command(
+            buildJsonObject {
+                    put("type", "goToFraction")
+                    put("value", value)
+                }
+                .toString()
+        )
+
+    var onVolumeKey: ((Boolean) -> Boolean)? = null
+    var volumeKeyPagingEnabled: Boolean = false
+    internal var curlHost: ReaderPageCurlHost? = null
+    internal var pageCurlEnabled = false
+    internal var pageColor = android.graphics.Color.WHITE
+
+    fun previousChapter() = command(buildJsonObject { put("type", "previousChapter") }.toString())
+
+    fun nextChapter() = command(buildJsonObject { put("type", "nextChapter") }.toString())
+
+    fun autoRead(running: Boolean, seconds: Int) =
+        command(
+            buildJsonObject {
+                    put("type", "autoRead")
+                    put("running", running)
+                    put("seconds", seconds)
+                }
+                .toString()
+        )
+
+    fun next() = turnPage(true)
+
+    fun prev() = turnPage(false)
+
+    private fun turnPage(next: Boolean) {
+        val host = curlHost
+        if (pageCurlEnabled && host != null) host.turn(next) else turnPageDirect(next)
     }
 
-    fun search(query: String) = command(buildJsonObject { put("type", "search"); put("query", query) }.toString())
+    internal fun turnPageDirect(next: Boolean) =
+        command(buildJsonObject { put("type", if (next) "next" else "prev") }.toString())
+
+    private fun updatePageAppearance(settings: ReaderSettings) {
+        val enabled = settings.pageCurl && settings.flow == "paginated"
+        val theme =
+            READER_THEMES.firstOrNull { it.name == settings.themeName } ?: READER_THEMES.first()
+        val color = (if (settings.isDark) theme.darkBg else theme.lightBg).toInt()
+        val update = {
+            if (enabled != pageCurlEnabled || color != pageColor) curlHost?.clear()
+            pageCurlEnabled = enabled
+            pageColor = color
+        }
+        if (Looper.myLooper() == Looper.getMainLooper()) update()
+        else Handler(Looper.getMainLooper()).post(update)
+    }
+
+    /**
+     * Replace the set of highlights drawn in the page. Only CFI-anchored, resolvable ones are
+     * drawn.
+     */
+    fun setAnnotations(items: List<BookAnnotation>) {
+        val arr =
+            kotlinx.serialization.json.buildJsonArray {
+                for (a in items) {
+                    val cfi = a.cfi ?: continue
+                    if (a.positionStatus == "failed") continue
+                    add(
+                        buildJsonObject {
+                            put("cfi", cfi)
+                            put("color", a.color)
+                            put("style", a.style)
+                        }
+                    )
+                }
+            }
+        command(
+            buildJsonObject {
+                    put("type", "setAnnotations")
+                    put("items", arr)
+                }
+                .toString()
+        )
+    }
+
+    fun search(query: String) =
+        command(
+            buildJsonObject {
+                    put("type", "search")
+                    put("query", query)
+                }
+                .toString()
+        )
 
     fun clearSearch() = command(buildJsonObject { put("type", "clearSearch") }.toString())
 
@@ -109,15 +197,25 @@ class ReaderController {
     fun setFonts(faces: List<ReaderFontFace>) {
         val cmd = buildJsonObject {
             put("type", "setFonts")
-            put("faces", ReaderBridge.json.encodeToJsonElement(kotlinx.serialization.builtins.ListSerializer(ReaderFontFace.serializer()), faces))
+            put(
+                "faces",
+                ReaderBridge.json.encodeToJsonElement(
+                    kotlinx.serialization.builtins.ListSerializer(ReaderFontFace.serializer()),
+                    faces,
+                ),
+            )
         }
         command(cmd.toString())
     }
 
     fun applyStyles(settings: ReaderSettings) {
+        updatePageAppearance(settings)
         val cmd = buildJsonObject {
             put("type", "applyStyles")
-            put("settings", ReaderBridge.json.encodeToJsonElement(ReaderSettings.serializer(), settings))
+            put(
+                "settings",
+                ReaderBridge.json.encodeToJsonElement(ReaderSettings.serializer(), settings),
+            )
         }
         command(cmd.toString())
     }
@@ -129,6 +227,7 @@ class ReaderController {
     // the chunk size instead of the whole file (a naive readBytes()+encodeToString() on a 90MB
     // EPUB peaks at ~450MB and reliably OOMs on default heap sizes).
     private fun runOpen(params: OpenParams, context: Context) {
+        updatePageAppearance(params.settings)
         val meta = OpenMeta(params.format, params.cfi, params.fraction, params.settings)
         val metaJson = ReaderBridge.json.encodeToString(OpenMeta.serializer(), meta)
         eval(ReaderBridge.jsBegin(metaJson))
@@ -160,31 +259,108 @@ class ReaderController {
  * WebView that suppresses the system Copy/Select-all toolbar. The page shows its own highlight
  * toolbar instead; the native selection handles are unaffected.
  */
-private class ReaderNativeWebView(context: Context) : WebView(context) {
-    override fun startActionMode(callback: android.view.ActionMode.Callback?, type: Int): android.view.ActionMode? =
+private class ReaderNativeWebView(context: Context, private val controller: ReaderController) :
+    WebView(context) {
+    private var downX = 0f
+    private var downY = 0f
+    private var downAt = 0L
+    private var draggingPage = false
+    private val slop = android.view.ViewConfiguration.get(context).scaledTouchSlop
+
+    override fun onTouchEvent(event: android.view.MotionEvent): Boolean {
+        if (!controller.pageCurlEnabled) return super.onTouchEvent(event)
+        when (event.actionMasked) {
+            android.view.MotionEvent.ACTION_DOWN -> {
+                downX = event.x
+                downY = event.y
+                downAt = event.eventTime
+                draggingPage = false
+            }
+            android.view.MotionEvent.ACTION_MOVE -> {
+                if (
+                    !draggingPage &&
+                        event.pointerCount == 1 &&
+                        event.eventTime - downAt < 350 &&
+                        kotlin.math.abs(event.x - downX) > slop * 2 &&
+                        kotlin.math.abs(event.x - downX) > kotlin.math.abs(event.y - downY) * 1.5f
+                ) {
+                    draggingPage = true
+                    android.view.MotionEvent.obtain(event).also {
+                        it.action = android.view.MotionEvent.ACTION_CANCEL
+                        super.onTouchEvent(it)
+                        it.recycle()
+                    }
+                }
+                if (draggingPage) return true
+            }
+            android.view.MotionEvent.ACTION_UP ->
+                if (draggingPage) {
+                    draggingPage = false
+                    if (kotlin.math.abs(event.x - downX) > width * .12f) {
+                        if (event.x < downX) controller.next() else controller.prev()
+                    }
+                    return true
+                }
+            android.view.MotionEvent.ACTION_CANCEL -> draggingPage = false
+        }
+        return super.onTouchEvent(event)
+    }
+
+    override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
+        val volumeKey =
+            event.keyCode == android.view.KeyEvent.KEYCODE_VOLUME_UP ||
+                event.keyCode == android.view.KeyEvent.KEYCODE_VOLUME_DOWN
+        if (volumeKey && controller.volumeKeyPagingEnabled && controller.onVolumeKey != null) {
+            if (event.action == android.view.KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
+                controller.onVolumeKey?.invoke(
+                    event.keyCode == android.view.KeyEvent.KEYCODE_VOLUME_DOWN
+                )
+            }
+            return true
+        }
+        return super.dispatchKeyEvent(event)
+    }
+
+    override fun startActionMode(
+        callback: android.view.ActionMode.Callback?,
+        type: Int,
+    ): android.view.ActionMode? =
         super.startActionMode(callback?.let { EmptyActionModeCallback(it) }, type)
 }
 
 private class EmptyActionModeCallback(private val delegate: android.view.ActionMode.Callback) :
     android.view.ActionMode.Callback2() {
-    override fun onCreateActionMode(mode: android.view.ActionMode, menu: android.view.Menu): Boolean {
+    override fun onCreateActionMode(
+        mode: android.view.ActionMode,
+        menu: android.view.Menu,
+    ): Boolean {
         delegate.onCreateActionMode(mode, menu)
         menu.clear()
         return true
     }
 
-    override fun onPrepareActionMode(mode: android.view.ActionMode, menu: android.view.Menu): Boolean {
+    override fun onPrepareActionMode(
+        mode: android.view.ActionMode,
+        menu: android.view.Menu,
+    ): Boolean {
         delegate.onPrepareActionMode(mode, menu)
         menu.clear()
         return true
     }
 
-    override fun onActionItemClicked(mode: android.view.ActionMode, item: android.view.MenuItem) = false
+    override fun onActionItemClicked(mode: android.view.ActionMode, item: android.view.MenuItem) =
+        false
 
-    override fun onDestroyActionMode(mode: android.view.ActionMode) = delegate.onDestroyActionMode(mode)
+    override fun onDestroyActionMode(mode: android.view.ActionMode) =
+        delegate.onDestroyActionMode(mode)
 
-    override fun onGetContentRect(mode: android.view.ActionMode, view: android.view.View, outRect: android.graphics.Rect) {
-        if (delegate is android.view.ActionMode.Callback2) delegate.onGetContentRect(mode, view, outRect)
+    override fun onGetContentRect(
+        mode: android.view.ActionMode,
+        view: android.view.View,
+        outRect: android.graphics.Rect,
+    ) {
+        if (delegate is android.view.ActionMode.Callback2)
+            delegate.onGetContentRect(mode, view, outRect)
         else super.onGetContentRect(mode, view, outRect)
     }
 }
@@ -201,58 +377,97 @@ fun ReaderWebView(
     AndroidView(
         modifier = modifier,
         factory = { context ->
-            val assetLoader = WebViewAssetLoader.Builder()
-                .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(context))
-                .addPathHandler("/reader-fonts/", WebViewAssetLoader.PathHandler { path ->
-                    val input = fontRepository.openCached(path)
-                    if (input == null) WebResourceResponse("text/plain", "UTF-8", 404, "Not Found", emptyMap(), null)
-                    else WebResourceResponse("font/${path.substringAfterLast('.')}", null, 200, "OK",
-                        mapOf("Access-Control-Allow-Origin" to "*", "Cache-Control" to "no-store"), input)
-                })
-                .build()
+            val assetLoader =
+                WebViewAssetLoader.Builder()
+                    .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(context))
+                    .addPathHandler(
+                        "/reader-fonts/",
+                        WebViewAssetLoader.PathHandler { path ->
+                            val input = fontRepository.openCached(path)
+                            if (input == null)
+                                WebResourceResponse(
+                                    "text/plain",
+                                    "UTF-8",
+                                    404,
+                                    "Not Found",
+                                    emptyMap(),
+                                    null,
+                                )
+                            else
+                                WebResourceResponse(
+                                    "font/${path.substringAfterLast('.')}",
+                                    null,
+                                    200,
+                                    "OK",
+                                    mapOf(
+                                        "Access-Control-Allow-Origin" to "*",
+                                        "Cache-Control" to "no-store",
+                                    ),
+                                    input,
+                                )
+                        },
+                    )
+                    .build()
 
-            ReaderNativeWebView(context).apply {
-                layoutParams = ViewGroup.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                )
-                settings.javaScriptEnabled = true
-                settings.domStorageEnabled = true
-                setBackgroundColor(android.graphics.Color.TRANSPARENT)
-                isVerticalScrollBarEnabled = false
-                isHorizontalScrollBarEnabled = false
+            val reader =
+                ReaderNativeWebView(context, controller).apply {
+                    isFocusableInTouchMode = true
+                    requestFocus()
+                    layoutParams =
+                        ViewGroup.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                        )
+                    settings.javaScriptEnabled = true
+                    settings.domStorageEnabled = true
+                    setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                    isVerticalScrollBarEnabled = false
+                    isHorizontalScrollBarEnabled = false
 
-                webViewClient = object : WebViewClientCompat() {
-                    override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
-                        Log.e("BookOrbitWebView", "Local reader renderer gone: crashed=${detail.didCrash()}, " +
-                            "priority=${detail.rendererPriorityAtExit()}, provider=${WebView.getCurrentWebViewPackage()?.versionName}")
-                        controller.detach(view)
-                        destroyedViews.add(view)
-                        (view.parent as? ViewGroup)?.removeView(view)
-                        view.destroy()
-                        onRendererGone()
-                        return true
-                    }
+                    webViewClient =
+                        object : WebViewClientCompat() {
+                            override fun onRenderProcessGone(
+                                view: WebView,
+                                detail: RenderProcessGoneDetail,
+                            ): Boolean {
+                                Log.e(
+                                    "BookOrbitWebView",
+                                    "Local reader renderer gone: crashed=${detail.didCrash()}, " +
+                                        "priority=${detail.rendererPriorityAtExit()}, provider=${WebView.getCurrentWebViewPackage()?.versionName}",
+                                )
+                                controller.detach(view)
+                                destroyedViews.add(view)
+                                (view.parent as? ViewGroup)?.removeView(view)
+                                view.destroy()
+                                onRendererGone()
+                                return true
+                            }
 
-                    override fun shouldInterceptRequest(
-                        view: WebView,
-                        request: WebResourceRequest,
-                    ): WebResourceResponse? = assetLoader.shouldInterceptRequest(request.url)
+                            override fun shouldInterceptRequest(
+                                view: WebView,
+                                request: WebResourceRequest,
+                            ): WebResourceResponse? =
+                                assetLoader.shouldInterceptRequest(request.url)
+                        }
+
+                    addJavascriptInterface(
+                        object {
+                            @JavascriptInterface
+                            fun postMessage(message: String) =
+                                controller.handleMessage(this@apply, message)
+                        },
+                        "AndroidReaderBridge",
+                    )
+
+                    controller.attach(this)
+                    loadUrl("https://appassets.androidplatform.net/assets/reader/index.html")
                 }
-
-                addJavascriptInterface(
-                    object {
-                        @JavascriptInterface
-                        fun postMessage(message: String) = controller.handleMessage(this@apply, message)
-                    },
-                    "AndroidReaderBridge",
-                )
-
-                controller.attach(this)
-                loadUrl("https://appassets.androidplatform.net/assets/reader/index.html")
-            }
+            ReaderPageCurlHost(context, reader, controller).also { controller.curlHost = it }
         },
-        onRelease = { view ->
+        onRelease = { host ->
+            host.clear()
+            if (controller.curlHost === host) controller.curlHost = null
+            val view = host.reader
             controller.detach(view)
             if (!destroyedViews.remove(view)) {
                 (view.parent as? ViewGroup)?.removeView(view)

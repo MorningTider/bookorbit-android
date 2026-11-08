@@ -13,6 +13,7 @@
  */
 import './foliate/view.js';
 import { fontFaceCSS, typographyCSS } from './reader-styles.js';
+import { applyPageAnimation, applySidePadding, createAutoReader } from './reader-navigation.js';
 
 const container = document.getElementById('reader');
 
@@ -23,6 +24,17 @@ let fontFaces = [];
 let view = null;
 /** Base64 transfer state for the book currently being opened. */
 let pending = null;
+const autoReader = createAutoReader({
+  next: (distance) => {
+    if (currentSettings?.pageCurl && currentSettings.flow === 'paginated') post({ type: 'pageTurnRequested' });
+    else return view?.renderer?.next(distance);
+  },
+  isScrolled: () => currentSettings?.flow === 'scrolled',
+  isAtEnd: () => view?.renderer?.atEnd === true,
+  viewportHeight: () => window.innerHeight,
+  onStopped: () => post({ type: 'autoReadStopped' }),
+});
+document.addEventListener('visibilitychange', () => { if (document.hidden) autoReader.stop(true); });
 
 function post(message) {
   try {
@@ -43,7 +55,7 @@ const THEMES = [
   { name: 'gray', light: { fg: '#222222', bg: '#e0e0e0', link: '#4488cc' }, dark: { fg: '#c6c6c6', bg: '#444444', link: '#88ccee' } },
   { name: 'sepia', light: { fg: '#5b4636', bg: '#f1e8d0', link: '#008b8b' }, dark: { fg: '#ffd595', bg: '#342e25', link: '#48d1cc' } },
   { name: 'crimson', light: { fg: '#2f1f25', bg: '#fdf1f4', link: '#dd0031' }, dark: { fg: '#f3dbe2', bg: '#3a252d', link: '#ff5a86' } },
-  { name: 'meadow', light: { fg: '#232c16', bg: '#d7dbbd', link: '#177b4d' }, dark: { fg: '#d8deba', bg: '#333627', link: '#a6d608' } },
+  { name: 'meadow', light: { fg: '#25321d', bg: '#e4efd5', link: '#177b4d' }, dark: { fg: '#d8deba', bg: '#333627', link: '#a6d608' } },
   { name: 'rosewood', light: { fg: '#4e1609', bg: '#f0d1d5', link: '#de3838' }, dark: { fg: '#e5c4c8', bg: '#462f32', link: '#ff646e' } },
   { name: 'azure', light: { fg: '#262d48', bg: '#cedef5', link: '#2d53e5' }, dark: { fg: '#babee1', bg: '#282e47', link: '#ff646e' } },
   { name: 'dawnlight', light: { fg: '#586e75', bg: '#fdf6e3', link: '#268bd2' }, dark: { fg: '#93a1a1', bg: '#002b36', link: '#268bd2' } },
@@ -106,8 +118,8 @@ function generateCSS(s) {
     pre { white-space: pre-wrap !important; tab-size: 2; }
     ${
       forceBg
-        ? `html, body { color: ${mode.fg} !important; background: none !important; }
-           body * { color: inherit !important; border-color: currentColor !important; background-color: ${mode.bg} !important; }
+        ? `html, body { color: ${mode.fg} !important; background: ${mode.bg} !important; }
+           body * { color: inherit !important; border-color: currentColor !important; background-color: transparent !important; }
            a:any-link { color: ${mode.link} !important; }
            svg, img { background-color: transparent !important; ${!dark ? 'mix-blend-mode: multiply;' : ''} }`
         : ''
@@ -122,15 +134,21 @@ function applyStyles(settings) {
   if (!view) return;
   currentSettings = { ...DEFAULT_SETTINGS, ...(settings ?? currentSettings ?? {}) };
   const s = currentSettings;
+  const theme = themeFor(s.themeName);
+  const paper = (s.isDark ? theme.dark : theme.light).bg;
+  document.documentElement.style.backgroundColor = paper;
+  container.style.backgroundColor = paper;
+  view.style.backgroundColor = paper;
   const r = view.renderer;
   if (!r) return;
   r.setAttribute('max-column-count', String(s.maxColumnCount));
-  r.setAttribute('gap', `${s.sidePadding * 2}px`);
+  applySidePadding(r, s.sidePadding, view.clientWidth);
   r.setAttribute('max-inline-size', `${s.maxInlineSize}px`);
   r.setAttribute('max-block-size', `${s.maxBlockSize}px`);
   if (s.flow === 'paginated') r.setAttribute('margin', '40px');
   else r.removeAttribute('margin');
   r.setAttribute('flow', s.flow);
+  applyPageAnimation(r, s);
   if (typeof r.setStyles === 'function') r.setStyles(generateCSS(s));
 }
 
@@ -341,6 +359,7 @@ function attachDocHandlers(doc, index) {
   doc.addEventListener(
     'pointerdown',
     () => {
+      autoReader.stop(true);
       const sel = doc.getSelection();
       selectionAtPointerDown = !!sel && !sel.isCollapsed;
     },
@@ -395,6 +414,11 @@ function createView() {
   view.setAttribute('id', 'foliate');
   view.style.cssText = 'width:100%;height:100%;display:block;';
   container.appendChild(view);
+  new ResizeObserver(() => {
+    if (view?.renderer && currentSettings) {
+      applySidePadding(view.renderer, currentSettings.sidePadding, view.clientWidth);
+    }
+  }).observe(view);
 
   view.addEventListener('load', () => {
     // The paginator swaps its internal view in a microtask after 'load'; defer so
@@ -434,6 +458,7 @@ function createView() {
       cfi: d.cfi ?? null,
       fraction: typeof d.fraction === 'number' ? d.fraction : null,
       chapterTitle: d.tocItem?.label ?? null,
+      chapterHref: d.tocItem?.href ?? null,
       location: d.location ?? null,
     });
   });
@@ -551,6 +576,16 @@ window.__readerCommand = (json) => {
       break;
     case 'goToFraction':
       if (typeof view.goToFraction === 'function') view.goToFraction(cmd.value);
+      break;
+    case 'previousChapter':
+      view.renderer?.prevSection?.();
+      break;
+    case 'nextChapter':
+      view.renderer?.nextSection?.();
+      break;
+    case 'autoRead':
+      if (cmd.running) autoReader.start(cmd.seconds);
+      else autoReader.stop();
       break;
     case 'prev':
       view.prev?.();

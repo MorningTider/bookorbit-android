@@ -59,4 +59,23 @@ class ReaderBridgeEventsTest {
         assertEquals(ReaderEvent.SearchDone(3, true), ReaderBridge.parseEvent("""{"type":"searchDone","total":3,"capped":true}"""))
         assertEquals(ReaderEvent.SearchDone(0, false), ReaderBridge.parseEvent("""{"type":"searchDone"}"""))
     }
+    @Test
+    fun `relocation includes the chapter href and automatic reader events`() {
+        val event = ReaderBridge.parseEvent("""{"type":"relocate","fraction":0.5,"chapterTitle":"第二章","chapterHref":"chapter2.xhtml"}""") as ReaderEvent.Relocate
+        assertEquals("chapter2.xhtml", event.chapterHref)
+        assertEquals(ReaderEvent.AutoReadStopped, ReaderBridge.parseEvent("""{"type":"autoReadStopped"}"""))
+        assertEquals(ReaderEvent.PageTurnRequested, ReaderBridge.parseEvent("""{"type":"pageTurnRequested"}"""))
+    }
+
+    @Test
+    fun `legacy settings preserve typography while new controls use defaults`() {
+        val settings = ReaderBridge.json.decodeFromString<ReaderSettings>("""{"fontSize":24,"lineHeight":1.9,"themeName":"sepia"}""")
+        assertEquals(24, settings.fontSize)
+        assertEquals(1.9, settings.lineHeight, 0.0001)
+        assertEquals("sepia", settings.themeName)
+        assertEquals(false, settings.pageCurl)
+        assertEquals(false, settings.volumeKeyPaging)
+        assertEquals(15, settings.autoPageIntervalSeconds)
+    }
+
 }

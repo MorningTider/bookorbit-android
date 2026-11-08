@@ -29,6 +29,11 @@ data class ReaderSettings(
     val hyphenate: Boolean = true,
     val isDark: Boolean = true,
     val themeName: String = "default",
+    val pageAnimation: Boolean = true,
+    val pageCurl: Boolean = false,
+    val volumeKeyPaging: Boolean = false,
+    val showReadingStatus: Boolean = true,
+    val autoPageIntervalSeconds: Int = 15,
     val flow: String = "paginated", // "paginated" | "scrolled"
 )
 
@@ -37,12 +42,16 @@ val LINE_HEIGHT_RANGE = 0.8..3.0
 
 data class FontFamilyOption(@StringRes val label: Int, val value: String?)
 
-val FONT_FAMILIES = listOf(
-    FontFamilyOption(R.string.font_original, null),
-    FontFamilyOption(R.string.font_serif, "Georgia, \"Times New Roman\", serif"),
-    FontFamilyOption(R.string.font_sans, "-apple-system, \"Helvetica Neue\", Arial, sans-serif"),
-    FontFamilyOption(R.string.font_monospace, "Menlo, Consolas, monospace"),
-)
+val FONT_FAMILIES =
+    listOf(
+        FontFamilyOption(R.string.font_original, null),
+        FontFamilyOption(R.string.font_serif, "Georgia, \"Times New Roman\", serif"),
+        FontFamilyOption(
+            R.string.font_sans,
+            "-apple-system, \"Helvetica Neue\", Arial, sans-serif",
+        ),
+        FontFamilyOption(R.string.font_monospace, "Menlo, Consolas, monospace"),
+    )
 
 fun clampFontSize(v: Int): Int = v.coerceIn(FONT_SIZE_RANGE.first, FONT_SIZE_RANGE.last)
 

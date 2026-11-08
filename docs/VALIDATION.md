@@ -1,33 +1,65 @@
 # Android 阅读器验收记录
 
-更新于 2026-11-08。本轮版本为 `0.7.1-custom.1`，版本码 `702`，应用标识 `com.bookorbit.compat`。
+更新于 2026-11-09，候选 `0.7.1-custom.3`，版本码 `704`，应用标识 `com.bookorbit.compat`。
 
 ## 自动检查
 
-- Full 与 F-Droid 两个变体分别通过 264 项 JVM 测试，均为零失败、零错误、零跳过。
-- 两个变体的 Android Lint、APK 构建均通过。Lint 错误为零，仍有依赖更新和既有代码建议类警告，未将其描述为零警告。
-- Reader JS 兼容回归 9 项通过。
-- 中英文资源覆盖与格式参数检查通过，共 482 项。
-- Kotlin 新增文件已通过 ktfmt 格式化，相关 JS 和文档通过 Prettier，`git diff --check` 通过。
-- 独立本机 Chromium 以 412×915 视口加载实际 Android Foliate 引擎和用户提供的 EPUB，成功加载本地字体处理器提供的一个字体，字号 22px、行高 39.6px，无阅读器错误。此项只验证引擎和字体通道，手机 WebView 与原生 Compose 操作另行验收。
+- Full 与 F-Droid 各通过 268 项 JVM 测试，零失败、零错误、零跳过。
+- JS 兼容与阅读交互回归 17 项通过。
+- 中英文覆盖和格式参数检查通过，共 517 项资源。
+- 双变体 Lint、APK 构建通过。Lint 零错误、144 项警告，含既有依赖/代码建议和程序化 View 的检查建议。
+- `git diff --check` 通过。新增 Kotlin 文件及主要 UI 实现已用 ktfmt，相关 JS 与文档已用 Prettier。
+
+## 原生模拟器验收
+
+环境为 Android 15 / API 35、arm64、本次独立 AVD `bookorbit-reader-api35`，设备像素 1080×2400。
+
+- 5 项 Compose 交互测试通过。包括字号、字体选择、间距、翻页选择、护眼绿、目录当前章定位/搜索/选择、启动自动阅读。
+- 真实 Android WebView 引擎测试通过。加载自制三章 EPUB，经 MockWebServer 下载字体到隔离缓存，再由生产字体处理器加载。验证实际字号和字体、正文宽度、可见绘制、护眼整页底色、音量键、自动翻页与停止、连续卷页、反向卷页、横向滑动和章节跳转。
+- 相同 5 项原生交互在 320dp 窄屏、1.5 倍系统字号下通过。设置内容可滚动，固定保留底部导航。
+- 引擎在 SwiftShader 和宿主 GPU 两种后端均通过。后者由模拟器日志确认使用 Apple M4 Pro。
+
+字体测试使用模拟器系统 Noto Serif 的真实文件，确认下载和 WebView 渲染通道。该文件的中文回退字形及测试页面不代表用户手机上所有中文字体均已逐项验收。界面截图使用测试状态，正文使用自制文本。
+
+截图在本机 `app/build/reports/custom3-reader-ui/reader-ui-validation/`，窄屏截图在 `custom3-reader-ui-narrow`，宿主 GPU 数据在 `custom3-reader-host`。构建目录受 Git 忽略。没有使用生产账号或真实用户图书制作本轮原生测试。
+
+## 流畅度测量
+
+使用 Window FrameMetrics 记录连续卷页，样本包括快照、目标正文绘制和动画。两种图形后端条件分别记录。
+
+| 后端                 | 帧样本 | 绘制中位数 | 帧间隔中位数 | 总帧中位数 | 总帧 P95  |
+| -------------------- | ------ | ---------- | ------------ | ---------- | --------- |
+| SwiftShader 软件渲染 | 123    | 0.261 ms   | 33.33 ms     | 86.58 ms   | 106.16 ms |
+| Mac 宿主 GPU         | 200    | 0.212 ms   | 16.67 ms     | 17.10 ms   | 41.99 ms  |
+
+GPU 后端的常见更新间隔接近 60Hz，仍有高耗时帧，总帧时间也超过 16.7ms 预算。功能验证通过，实际手机的流畅度验收待完成。
+
+实现每次仅持有一张最长边 1280 像素的快照。网格、路径和画笔复用，结束、旋转及退出回收。仿真目前在点击或完成横向滑动后播放，跟手拖动取消和覆盖翻页等差距见剩余清单。
+
+## 修复的排版回归
+
+- Foliate 的 `gap` 按百分比解析。此前把像素传进去会造成手机正文过窄，本轮改为按可用宽度换算并在旋转时重算。
+- 加入正文实际宽度断言。
+- 修复切换主题后段落与页边底色不一致，加入整页护眼绿背景断言。
+- 引擎截图等待 Chromium 可见绘制完成，避免把 DOM 成功但画面尚未绘制当成通过。
 
 ## 新旧包兼容性
 
-旧 `0.6.0-compat.1` 包和本次候选包的应用标识相同。本次版本码递增，二者签名证书 SHA-256 均为 `bbbb7c5af72d6774bf27930206d530b0ac09bd32a4c2402ebf77823c4779e983`。签名和版本条件支持覆盖升级，手机上的实际覆盖安装及数据保留仍待验收。
+与旧 `0.6.0-compat.1` 中文包的应用标识一致，版本码递增。旧包与本机新包证书 SHA-256 均为 `bbbb7c5af72d6774bf27930206d530b0ac09bd32a4c2402ebf77823c4779e983`。签名与版本条件支持覆盖升级，手机实际覆盖安装和数据保留仍待验收。
 
-使用本机既有调试签名生成自用候选。GitHub CI 会自行生成调试密钥，因此 CI 的 APK 签名与本机自用候选不同。私钥没有上传仓库，后续正式签名方案另行配置。
+使用本机既有调试签名生成自用候选。GitHub CI 自行生成调试密钥，其 APK 签名可能不同。本机私钥未上传。
 
 ## 产物
 
-| 变体    | APK 路径                                                  | SHA-256                                                            |
+| 变体    | APK                                                       | SHA-256                                                            |
 | ------- | --------------------------------------------------------- | ------------------------------------------------------------------ |
-| Full    | `app/build/outputs/apk/full/debug/app-full-debug.apk`     | `417cc7e864b4004927a200dc500d6b0b7bd1d631f08667980aeebfde2153f278` |
-| F-Droid | `app/build/outputs/apk/fdroid/debug/app-fdroid-debug.apk` | `509327278f636e68dea8d4872a293810656456396a0a27b7250da7d3af0edec7` |
+| Full    | `app/build/outputs/apk/full/debug/app-full-debug.apk`     | `ea4d900d24fa9e26b72633a549e5aced71fafca442b9ee81c2a4b7709e74bdf4` |
+| F-Droid | `app/build/outputs/apk/fdroid/debug/app-fdroid-debug.apk` | `aba77a816b57b9aec60a4a9478572eff4e39e54fd01fc1e892668c7546e85097` |
 
-两个 APK 均在 Git 忽略的构建目录。产物摘要和测试计数的机器记录在本机 `app/build/reports/custom-validation.json`。
+自用 Full 包另外保存为 `app/build/outputs/custom/BookOrbit-0.7.1-custom.3-zh-CN.apk`，摘要一致。机器记录为本机 `app/build/reports/custom-validation.json`。
 
-## 尚未完成
+## 尚待完成
 
-本轮 ADB 没有已授权 Android 设备，未执行手机安装、Compose 界面触控、中文字体真机渲染、离线恢复与网页阅读日志端到端验证。其余待办见 `CUSTOMIZATION_REMAINING.md`。
+手机覆盖安装、真实中文字体、离线恢复、网页端 Android 阅读日志，以及其他文件引擎的最终手机验收。TXT 原生阅读、跨设备排版、跟手卷页、覆盖翻页、图片背景及参考图的附加内容页见 `CUSTOMIZATION_REMAINING.md`。
 
-本机 Git 初始化曾误落到父目录，随后移除了本次创建的父目录元数据，并在独立 Android 项目内恢复与 GitHub 基线完全一致的浅检出。当前父目录没有该误建 `.git`。
+初次 Git 初始化曾落到父目录，本次创建的父目录元数据已经移除。当前项目是与 GitHub 基线一致的独立浅检出。

@@ -14,7 +14,7 @@
 3. 合并目标正式 tag，逐项处理冲突，结合需求清单和补丁索引检查功能。
 4. 核对 API DTO、Android SDK、依赖锁、应用标识、版本码与签名。
 5. 运行中文键和格式占位符校验、JS 兼容测试、两种 flavor 的单元测试、Lint 与 APK 构建。
-6. 完成真机覆盖安装、字体离线、进度日志、PDF/漫画和有声书回归。
+6. 运行隔离模拟器的 `ReaderInteractionTest` 与 `ReaderEngineTest` 并保存截图和帧耗时，然后完成真机覆盖安装、字体离线、进度日志、PDF/漫画和有声书回归。
 7. 验收通过后合回定制分支，更新需求矩阵和验收文档，再推送用户 fork。
 
 ```sh
@@ -29,3 +29,14 @@ node --test compat-tests/*.test.mjs
 当前初始检出为精确浅检出，联网合并其他历史前先运行 `git fetch --unshallow origin`。获取完整历史后才判断合并关系。不要重建 fork、覆盖定制分支或强推共享历史。
 
 密钥、登录信息、真实图书、APK、构建目录和本机 `local.properties` 留在 Git 跟踪之外。现有自用包使用本机调试签名，正式分发签名和公开发行单独处理。
+
+## 阅读器原生验收
+
+```sh
+./gradlew :app:connectedFdroidDebugAndroidTest \
+  -Pandroid.testInstrumentationRunnerArguments.class=com.bookorbit.feature.reader.ReaderInteractionTest,com.bookorbit.feature.reader.ReaderEngineTest
+```
+
+在独立模拟器执行。引擎测试读取系统 Noto Serif 字体，使用本机 MockWebServer、独立加密凭据空间与自制 EPUB。字体通道和中文家族实际字形分别验收。
+
+截图和测量写入测试应用的 `reader-ui-validation` 目录。Gradle 测试工具可能在完成后卸载应用，需要截图时可手动安装两个测试 APK，以 `am instrument` 运行后取出。产物保存在 Git 忽略的构建目录。

@@ -17,3 +17,14 @@
 `ReaderProgressRepository.kt` 负责离开阅读页后的保存与并发排序。`ReadingSessionRecorder.kt` 和 `ReadingSessionTracker.kt` 维护日志检查点、空闲计时边界和重试。服务器接收重复 sessionId 时更新同一日志，不能改成每次重试生成新 ID。已有 BookOrbit 服务端支持 `source=android`，本轮不修改服务端数据库。
 
 定制提交应按 `git log --oneline custom/bookorbit-android-v0.7.1` 查看，验收快照在 `VALIDATION.md`。
+
+## BA-C11 至 BA-C16
+
+- `ReaderAppearance.kt`、`ReaderChrome.kt`、`ReaderSettingsSheet.kt` 和 `ReaderTocSheet.kt` 维护主题、紧凑面板及底部导航。
+- `ReaderPageCurl.kt` 使用 PixelCopy、单张限尺寸快照、复用网格/路径/画笔和 ValueAnimator。`ReaderWebView.kt` 接入横向手势、音量键、首尾边界和释放。保留长按选字。
+- `reader-navigation.js` 维护动画、自动阅读和分页边距。Foliate `gap` 必须传百分比，旋转后重算。
+- `ReaderBridge.kt`、`bridge.js`、`ReaderScreen.kt` 接入当前章 href、自动停止和原生自动卷页事件。
+- 新字段保留默认值以兼容旧 JSON，回归见 `ReaderBridgeEventsTest`。
+- `ReaderInteractionTest` 检查设置和目录，`ReaderEngineTest` 检查自制 EPUB、隔离字体下载、可见绘制、章节、按键、滑动、自动阅读和帧耗时。
+
+`ReaderThemes.kt` 与 `bridge.js` 的原生护眼绿同步维护，网页配色在服务端仓库维护。

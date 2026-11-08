@@ -8,36 +8,73 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.LightMode
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.bookorbit.R
-import kotlin.math.roundToInt
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+enum class ReaderSettingsPage {
+    QUICK,
+    FONTS,
+    SPACING,
+    THEMES,
+    MORE,
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ReaderSettingsSheet(
     settings: ReaderSettings,
@@ -48,200 +85,482 @@ fun ReaderSettingsSheet(
     onRefreshFonts: () -> Unit,
     onChange: (ReaderSettings) -> Unit,
     onDismiss: () -> Unit,
+    onStartAutoRead: () -> Unit = {},
+    onContents: () -> Unit = {},
 ) {
-    ModalBottomSheet(onDismissRequest = onDismiss) {
-        Column(
-            modifier =
-                Modifier.fillMaxWidth()
-                    .verticalScroll(rememberScrollState())
-                    .padding(horizontal = 20.dp)
-                    .padding(bottom = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+    var page by rememberSaveable { mutableStateOf(ReaderSettingsPage.QUICK) }
+    val maxHeight = LocalConfiguration.current.screenHeightDp.dp * 0.84f
+    ReaderAppearance(settings) {
+        ModalBottomSheet(
+            onDismissRequest = onDismiss,
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            containerColor = MaterialTheme.colorScheme.surface,
         ) {
-            Text(
-                stringResource(R.string.rs_reading_settings),
-                style = MaterialTheme.typography.titleLarge,
-            )
-            Label(stringResource(R.string.rs_label_theme))
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                READER_THEMES.forEach { theme ->
-                    val selected = settings.themeName == theme.name
-                    val label = stringResource(theme.label)
-                    Box(
-                        modifier =
-                            Modifier.size(40.dp)
-                                .clip(CircleShape)
-                                .background(
-                                    Color(if (settings.isDark) theme.darkBg else theme.lightBg)
-                                )
-                                .border(
-                                    if (selected) 3.dp else 1.dp,
-                                    MaterialTheme.colorScheme.primary,
-                                    CircleShape,
-                                )
-                                .semantics { contentDescription = label }
-                                .clickable { onChange(settings.copy(themeName = theme.name)) },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(
-                            stringResource(R.string.a),
-                            color = Color(if (settings.isDark) theme.darkFg else theme.lightFg),
-                        )
-                    }
-                }
-            }
-            Toggle(stringResource(R.string.dark), settings.isDark) {
-                onChange(settings.copy(isDark = it))
-            }
-            Toggle(stringResource(R.string.rs_system_brightness), settings.brightness < 0) {
-                onChange(settings.copy(brightness = if (it) -1.0 else 0.5))
-            }
-            if (settings.brightness >= 0) {
-                SettingSlider(
-                    stringResource(R.string.rs_brightness),
-                    settings.brightness,
-                    0.05..1.0,
-                ) {
-                    onChange(settings.copy(brightness = it))
-                }
-            }
-            SettingSlider(
-                stringResource(R.string.font_size),
-                settings.fontSize.toDouble(),
-                10.0..48.0,
-                settings.fontSize.toString(),
-            ) {
-                onChange(settings.copy(fontSize = it.roundToInt()))
-            }
-            SettingSlider(stringResource(R.string.line_height), settings.lineHeight, 0.8..3.0) {
-                onChange(settings.copy(lineHeight = clampLineHeight(it)))
-            }
-            SettingSlider(
-                stringResource(R.string.rs_paragraph_spacing),
-                settings.paragraphSpacing,
-                0.0..2.0,
-            ) {
-                onChange(settings.copy(paragraphSpacing = it))
-            }
-            SettingSlider(
-                stringResource(R.string.rs_letter_spacing),
-                settings.letterSpacing,
-                0.0..0.3,
-            ) {
-                onChange(settings.copy(letterSpacing = it))
-            }
-            SettingSlider(
-                stringResource(R.string.rs_margins),
-                settings.sidePadding.toDouble(),
-                8.0..48.0,
-                settings.sidePadding.toString(),
-            ) {
-                onChange(settings.copy(sidePadding = it.roundToInt()))
-            }
-            Label(stringResource(R.string.rs_label_font))
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FONT_FAMILIES.forEach { font ->
-                    FilterChip(
-                        selected = settings.fontFamily == font.value,
-                        onClick = { onChange(settings.copy(fontFamily = font.value)) },
-                        label = { Text(stringResource(font.label)) },
-                    )
-                }
-            }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    stringResource(R.string.rs_download_fonts),
-                    modifier = Modifier.weight(1f),
-                    fontWeight = FontWeight.SemiBold,
-                )
-                TextButton(
-                    onClick = onRefreshFonts,
-                    enabled = !fontsLoading && downloadingFont == null,
-                ) {
-                    Text(stringResource(R.string.rs_refresh_fonts))
-                }
-            }
-            if (fontsLoading) CircularProgressIndicator(modifier = Modifier.size(24.dp))
-            if (!fontsLoading && fonts.isEmpty()) Text(stringResource(R.string.rs_fonts_empty))
-            fonts.forEach { font ->
+            Column(Modifier.fillMaxWidth().heightIn(max = maxHeight)) {
                 Row(
+                    Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(font.name)
-                        Text(
-                            stringResource(
-                                if (font.scope == "server") R.string.rs_server_font
-                                else R.string.rs_user_font
-                            ),
-                            style = MaterialTheme.typography.labelSmall,
-                        )
-                    }
-                    if (downloadingFont == font.cssFamily)
-                        CircularProgressIndicator(modifier = Modifier.size(24.dp))
-                    else
-                        TextButton(onClick = { onFont(font) }, enabled = downloadingFont == null) {
-                            Text(
-                                stringResource(
-                                    when {
-                                        settings.fontFamily == font.cssFamily ->
-                                            R.string.rs_font_selected
-                                        font.downloaded -> R.string.rs_font_use
-                                        else -> R.string.rs_font_download
-                                    }
-                                )
-                            )
+                    if (page != ReaderSettingsPage.QUICK) {
+                        IconButton(onClick = { page = ReaderSettingsPage.QUICK }) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.back))
                         }
+                    }
+                    Text(
+                        stringResource(
+                            when (page) {
+                                ReaderSettingsPage.QUICK -> R.string.rs_reading_settings
+                                ReaderSettingsPage.FONTS -> R.string.rs_label_font
+                                ReaderSettingsPage.SPACING -> R.string.rs_spacing_title
+                                ReaderSettingsPage.THEMES -> R.string.rs_backgrounds
+                                ReaderSettingsPage.MORE -> R.string.rs_more_settings
+                            }
+                        ),
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.weight(1f),
+                    )
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.Default.Close, stringResource(R.string.close))
+                    }
                 }
-            }
-            Text(
-                stringResource(R.string.rs_font_offline_hint),
-                style = MaterialTheme.typography.bodySmall,
-            )
-            Toggle(stringResource(R.string.rs_bold), settings.fontWeight >= 700) {
-                onChange(settings.copy(fontWeight = if (it) 700 else 400))
-            }
-            Toggle(stringResource(R.string.rs_indent), settings.paragraphIndent) {
-                onChange(settings.copy(paragraphIndent = it))
-            }
-            Toggle(stringResource(R.string.rs_justify), settings.justify) {
-                onChange(settings.copy(justify = it))
-            }
-            Toggle(stringResource(R.string.rs_keep_screen_on), settings.keepScreenOn) {
-                onChange(settings.copy(keepScreenOn = it))
-            }
-            Label(stringResource(R.string.rs_label_layout))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilterChip(
-                    settings.flow == "paginated",
-                    { onChange(settings.copy(flow = "paginated")) },
-                    label = { Text(stringResource(R.string.paginated)) },
+                HorizontalDivider()
+                if (page == ReaderSettingsPage.FONTS) {
+                    ReaderFontPicker(
+                        settings,
+                        fonts,
+                        fontsLoading,
+                        downloadingFont,
+                        onFont,
+                        onRefreshFonts,
+                        onChange,
+                        Modifier.height(maxHeight - 144.dp),
+                    )
+                } else {
+                    Column(
+                        Modifier.fillMaxWidth()
+                            .weight(1f, fill = false)
+                            .verticalScroll(rememberScrollState())
+                            .padding(horizontal = 20.dp, vertical = 12.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp),
+                    ) {
+                        when (page) {
+                            ReaderSettingsPage.QUICK ->
+                                QuickSettings(
+                                    settings,
+                                    fonts,
+                                    onChange,
+                                    onFonts = { page = ReaderSettingsPage.FONTS },
+                                    onSpacing = { page = ReaderSettingsPage.SPACING },
+                                    onThemes = { page = ReaderSettingsPage.THEMES },
+                                    onMore = { page = ReaderSettingsPage.MORE },
+                                    onAutoRead = onStartAutoRead,
+                                )
+                            ReaderSettingsPage.SPACING -> SpacingSettings(settings, onChange)
+                            ReaderSettingsPage.THEMES -> ThemePicker(settings, onChange)
+                            ReaderSettingsPage.MORE -> MoreSettings(settings, onChange)
+                            ReaderSettingsPage.FONTS -> Unit
+                        }
+                    }
+                }
+                HorizontalDivider()
+                ReaderBottomNavigation(
+                    settings,
+                    onContents = onContents,
+                    onNight = { onChange(settings.copy(isDark = !settings.isDark)) },
+                    onSettings = { page = ReaderSettingsPage.QUICK },
                 )
-                FilterChip(
-                    settings.flow == "scrolled",
-                    { onChange(settings.copy(flow = "scrolled")) },
-                    label = { Text(stringResource(R.string.scrolled)) },
-                )
-            }
-            TextButton(onClick = { onChange(ReaderSettings()) }) {
-                Text(stringResource(R.string.rs_reset))
             }
         }
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun Label(text: String) {
-    Text(text, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+private fun QuickSettings(
+    settings: ReaderSettings,
+    fonts: List<ReaderFontFamily>,
+    onChange: (ReaderSettings) -> Unit,
+    onFonts: () -> Unit,
+    onSpacing: () -> Unit,
+    onThemes: () -> Unit,
+    onMore: () -> Unit,
+    onAutoRead: () -> Unit,
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Icon(Icons.Default.LightMode, stringResource(R.string.rs_brightness), Modifier.size(20.dp))
+        val brightnessLabel = stringResource(R.string.rs_brightness)
+        Slider(
+            value = if (settings.brightness < 0) 0.5f else settings.brightness.toFloat(),
+            onValueChange = { onChange(settings.copy(brightness = it.toDouble())) },
+            valueRange = 0.05f..1f,
+            modifier = Modifier.weight(1f).semantics { contentDescription = brightnessLabel },
+        )
+        FilterChip(
+            selected = settings.brightness < 0,
+            onClick = {
+                onChange(settings.copy(brightness = if (settings.brightness < 0) 0.5 else -1.0))
+            },
+            label = { Text(stringResource(R.string.rs_system)) },
+        )
+    }
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        OutlinedButton(
+            onClick = { onChange(settings.copy(fontSize = clampFontSize(settings.fontSize - 1))) },
+            enabled = settings.fontSize > FONT_SIZE_RANGE.first,
+            modifier = Modifier.testTag("reader-font-smaller"),
+            contentPadding = PaddingValues(horizontal = 12.dp),
+        ) {
+            Text(stringResource(R.string.rs_a_minus), fontSize = 18.sp)
+        }
+        Text(
+            settings.fontSize.toString(),
+            modifier = Modifier.testTag("reader-font-size"),
+            style = MaterialTheme.typography.titleMedium,
+        )
+        OutlinedButton(
+            onClick = { onChange(settings.copy(fontSize = clampFontSize(settings.fontSize + 1))) },
+            enabled = settings.fontSize < FONT_SIZE_RANGE.last,
+            modifier = Modifier.testTag("reader-font-larger"),
+            contentPadding = PaddingValues(horizontal = 12.dp),
+        ) {
+            Text(stringResource(R.string.rs_a_plus), fontSize = 18.sp)
+        }
+        val fontName =
+            fonts.firstOrNull { it.cssFamily == settings.fontFamily }?.name
+                ?: FONT_FAMILIES.firstOrNull { it.value == settings.fontFamily }
+                    ?.let { stringResource(it.label) }
+                ?: stringResource(R.string.rs_label_font)
+        TextButton(onClick = onFonts, modifier = Modifier.weight(1f).testTag("reader-open-fonts")) {
+            Text(fontName, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Icon(
+                Icons.Default.ChevronRight,
+                contentDescription = null,
+                modifier = Modifier.size(16.dp),
+            )
+        }
+    }
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        listOf("default", "sepia", "meadow", "azure", "gray").forEach { name ->
+            ThemeSwatch(READER_THEMES.first { it.name == name }, settings, onChange)
+        }
+        TextButton(onClick = onThemes) { Text(stringResource(R.string.rs_more)) }
+    }
+    FilterChip(
+        selected = settings.themeName == "meadow" && !settings.isDark,
+        onClick = {
+            val active = settings.themeName == "meadow" && !settings.isDark
+            onChange(settings.copy(themeName = if (active) "default" else "meadow", isDark = false))
+        },
+        label = { Text(stringResource(R.string.rs_eye_comfort)) },
+    )
+    Text(stringResource(R.string.rs_page_turn), style = MaterialTheme.typography.labelLarge)
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        PageTurnOption(
+            stringResource(R.string.rs_turn_curl),
+            settings.flow == "paginated" && settings.pageCurl,
+        ) {
+            onChange(settings.copy(flow = "paginated", pageCurl = true, pageAnimation = false))
+        }
+        PageTurnOption(
+            stringResource(R.string.rs_turn_slide),
+            settings.flow == "paginated" && settings.pageAnimation && !settings.pageCurl,
+        ) {
+            onChange(settings.copy(flow = "paginated", pageAnimation = true, pageCurl = false))
+        }
+        PageTurnOption(
+            stringResource(R.string.rs_turn_none),
+            settings.flow == "paginated" && !settings.pageAnimation && !settings.pageCurl,
+        ) {
+            onChange(settings.copy(flow = "paginated", pageAnimation = false, pageCurl = false))
+        }
+        PageTurnOption(stringResource(R.string.rs_turn_scroll), settings.flow == "scrolled") {
+            onChange(settings.copy(flow = "scrolled"))
+        }
+    }
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        OutlinedButton(onClick = onSpacing, modifier = Modifier.weight(1f)) {
+            Text(stringResource(R.string.rs_spacing_title))
+        }
+        OutlinedButton(onClick = onMore, modifier = Modifier.weight(1f)) {
+            Text(stringResource(R.string.rs_more_settings))
+        }
+    }
+    Button(onClick = onAutoRead, modifier = Modifier.fillMaxWidth()) {
+        Icon(Icons.Default.PlayArrow, null)
+        Text(stringResource(R.string.rs_start_auto_read))
+    }
 }
 
 @Composable
-private fun Toggle(label: String, checked: Boolean, onChange: (Boolean) -> Unit) {
-    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+private fun PageTurnOption(label: String, selected: Boolean, onClick: () -> Unit) {
+    FilterChip(selected = selected, onClick = onClick, label = { Text(label) })
+}
+
+@Composable
+private fun ThemeSwatch(
+    theme: ReaderTheme,
+    settings: ReaderSettings,
+    onChange: (ReaderSettings) -> Unit,
+) {
+    val selected = theme.name == settings.themeName
+    val label = stringResource(theme.label)
+    val color = Color(if (settings.isDark) theme.darkBg else theme.lightBg)
+    Box(
+        modifier =
+            Modifier.size(38.dp)
+                .clip(CircleShape)
+                .background(color)
+                .border(
+                    if (selected) 2.dp else 1.dp,
+                    if (selected) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.outline,
+                    CircleShape,
+                )
+                .semantics {
+                    contentDescription = label
+                    this.selected = selected
+                }
+                .clickable { onChange(settings.copy(themeName = theme.name)) },
+        contentAlignment = Alignment.Center,
+    ) {
+        if (selected)
+            Icon(
+                Icons.Default.Check,
+                null,
+                tint = Color(if (settings.isDark) theme.darkFg else theme.lightFg),
+                modifier = Modifier.size(20.dp),
+            )
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ThemePicker(settings: ReaderSettings, onChange: (ReaderSettings) -> Unit) {
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(20.dp),
+        verticalArrangement = Arrangement.spacedBy(20.dp),
+    ) {
+        READER_THEMES.forEach { theme ->
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                ThemeSwatch(theme, settings, onChange)
+                Text(stringResource(theme.label), style = MaterialTheme.typography.labelSmall)
+            }
+        }
+    }
+    SettingToggle(stringResource(R.string.dark), settings.isDark) {
+        onChange(settings.copy(isDark = it))
+    }
+}
+
+@Composable
+private fun ReaderFontPicker(
+    settings: ReaderSettings,
+    fonts: List<ReaderFontFamily>,
+    loading: Boolean,
+    downloading: String?,
+    onFont: (ReaderFontFamily) -> Unit,
+    onRefresh: () -> Unit,
+    onChange: (ReaderSettings) -> Unit,
+    modifier: Modifier,
+) {
+    Column(modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                stringResource(R.string.rs_font_offline_short),
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.bodySmall,
+            )
+            TextButton(onClick = onRefresh, enabled = !loading && downloading == null) {
+                Text(stringResource(R.string.rs_refresh_fonts))
+            }
+        }
+        if (loading) CircularProgressIndicator(Modifier.size(22.dp))
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(2),
+            modifier = Modifier.weight(1f),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            items(FONT_FAMILIES, key = { it.label }) { font ->
+                FontCard(
+                    stringResource(font.label),
+                    stringResource(R.string.rs_builtin_font),
+                    settings.fontFamily == font.value,
+                    false,
+                    downloading == null,
+                ) {
+                    onChange(settings.copy(fontFamily = font.value))
+                }
+            }
+            items(fonts, key = { "${it.scope}:${it.name}" }) { font ->
+                val hint =
+                    stringResource(
+                        when {
+                            font.downloaded -> R.string.rs_font_downloaded
+                            font.scope == "server" -> R.string.rs_server_font
+                            else -> R.string.rs_user_font
+                        }
+                    )
+                FontCard(
+                    font.name,
+                    hint,
+                    settings.fontFamily == font.cssFamily,
+                    downloading == font.cssFamily,
+                    downloading == null,
+                ) {
+                    onFont(font)
+                }
+            }
+            if (!loading && fonts.isEmpty())
+                item {
+                    Text(
+                        stringResource(R.string.rs_fonts_empty),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+        }
+    }
+}
+
+@Composable
+private fun FontCard(
+    name: String,
+    hint: String,
+    selected: Boolean,
+    loading: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    val shape = RoundedCornerShape(14.dp)
+    Surface(
+        onClick = onClick,
+        enabled = enabled,
+        shape = shape,
+        color =
+            if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)
+            else MaterialTheme.colorScheme.surface,
+        modifier =
+            Modifier.fillMaxWidth()
+                .border(
+                    1.dp,
+                    if (selected) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.outlineVariant,
+                    shape,
+                )
+                .semantics { this.selected = selected },
+    ) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    name,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                    fontWeight = FontWeight.Medium,
+                )
+                if (loading) CircularProgressIndicator(Modifier.size(18.dp))
+                else if (selected)
+                    Icon(
+                        Icons.Default.Check,
+                        stringResource(R.string.rs_font_selected),
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(18.dp),
+                    )
+            }
+            Text(
+                hint,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun SpacingSettings(settings: ReaderSettings, onChange: (ReaderSettings) -> Unit) {
+    Text(stringResource(R.string.rs_live_preview), style = MaterialTheme.typography.bodySmall)
+    SettingSlider(stringResource(R.string.line_height), settings.lineHeight, 0.8..3.0) {
+        onChange(settings.copy(lineHeight = clampLineHeight(it)))
+    }
+    SettingSlider(
+        stringResource(R.string.rs_paragraph_spacing),
+        settings.paragraphSpacing,
+        0.0..2.0,
+    ) {
+        onChange(settings.copy(paragraphSpacing = it))
+    }
+    SettingSlider(stringResource(R.string.rs_letter_spacing), settings.letterSpacing, 0.0..0.3) {
+        onChange(settings.copy(letterSpacing = it))
+    }
+    SettingSlider(stringResource(R.string.rs_margins), settings.sidePadding.toDouble(), 8.0..48.0) {
+        onChange(settings.copy(sidePadding = it.toInt()))
+    }
+    SettingToggle(stringResource(R.string.rs_bold), settings.fontWeight >= 700) {
+        onChange(settings.copy(fontWeight = if (it) 700 else 400))
+    }
+    SettingToggle(stringResource(R.string.rs_indent), settings.paragraphIndent) {
+        onChange(settings.copy(paragraphIndent = it))
+    }
+    SettingToggle(stringResource(R.string.rs_justify), settings.justify) {
+        onChange(settings.copy(justify = it))
+    }
+    TextButton(
+        onClick = {
+            onChange(
+                settings.copy(
+                    lineHeight = 1.5,
+                    paragraphSpacing = 0.6,
+                    letterSpacing = 0.0,
+                    sidePadding = 20,
+                    fontWeight = 400,
+                    paragraphIndent = false,
+                    justify = true,
+                )
+            )
+        }
+    ) {
+        Text(stringResource(R.string.rs_reset_spacing))
+    }
+}
+
+@Composable
+private fun MoreSettings(settings: ReaderSettings, onChange: (ReaderSettings) -> Unit) {
+    SettingToggle(stringResource(R.string.rs_volume_turn), settings.volumeKeyPaging) {
+        onChange(settings.copy(volumeKeyPaging = it))
+    }
+    SettingToggle(stringResource(R.string.rs_keep_screen_on), settings.keepScreenOn) {
+        onChange(settings.copy(keepScreenOn = it))
+    }
+    SettingToggle(stringResource(R.string.rs_show_status), settings.showReadingStatus) {
+        onChange(settings.copy(showReadingStatus = it))
+    }
+    SettingSlider(
+        stringResource(R.string.rs_auto_interval),
+        settings.autoPageIntervalSeconds.toDouble(),
+        5.0..120.0,
+    ) {
+        onChange(settings.copy(autoPageIntervalSeconds = it.toInt()))
+    }
+    Text(stringResource(R.string.rs_auto_hint), style = MaterialTheme.typography.bodySmall)
+    TextButton(onClick = { onChange(ReaderSettings()) }) { Text(stringResource(R.string.rs_reset)) }
+}
+
+@Composable
+private fun SettingToggle(label: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Text(label, modifier = Modifier.weight(1f))
         Switch(checked, onChange, modifier = Modifier.semantics { contentDescription = label })
     }
@@ -252,16 +571,15 @@ private fun SettingSlider(
     label: String,
     value: Double,
     range: ClosedFloatingPointRange<Double>,
-    display: String = String.format(java.util.Locale.getDefault(), "%.1f", value),
     onChange: (Double) -> Unit,
 ) {
     Column {
         Row {
             Text(label, modifier = Modifier.weight(1f))
-            Text(display)
+            Text(String.format(java.util.Locale.getDefault(), "%.1f", value))
         }
         Slider(
-            value = value.toFloat().coerceIn(range.start.toFloat(), range.endInclusive.toFloat()),
+            value.toFloat().coerceIn(range.start.toFloat(), range.endInclusive.toFloat()),
             onValueChange = { onChange(it.toDouble()) },
             valueRange = range.start.toFloat()..range.endInclusive.toFloat(),
             modifier = Modifier.semantics { contentDescription = label },
