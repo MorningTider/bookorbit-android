@@ -42,3 +42,5 @@ node --test compat-tests/*.test.mjs
 截图和测量写入测试应用的 `reader-ui-validation` 目录。Gradle 测试工具可能在完成后卸载应用，需要截图时可手动安装两个测试 APK，以 `am instrument` 运行后取出。产物保存在 Git 忽略的构建目录。
 
 跨端同步回归同时运行 `ReaderProgressSyncTest` 和 `ReaderSyncHttpTest`，核对 `textUpdatedAt`、`source=text`、旧离线检查点、网页主动回退及本机时钟偏差。模拟HTTP与实际NAS的手机联调分别记录。
+
+安装标识回归运行 `com.bookorbit.app.AppBrandingTest`，Full与F-Droid分别检查实际名称、中英文资源、普通与圆形图标。主名称为BookOrbit，背景为蓝色 `#2563EB`，前景为白色轨道。上游合并后检查 `src/debug` 是否重新覆盖这些主资源。

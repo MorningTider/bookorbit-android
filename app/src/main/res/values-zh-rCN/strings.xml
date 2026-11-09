@@ -1,5 +1,5 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
-    <string name="app_name">BookOrbit 兼容测试版</string>
+    <string name="app_name">BookOrbit</string>
     <string name="a">A</string>
     <string name="add">添加%1$s…</string>
     <string name="add_note">添加笔记</string>

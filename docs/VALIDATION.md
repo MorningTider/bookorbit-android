@@ -1,18 +1,25 @@
 # Android 阅读器验收记录
 
-更新于 2026-11-09，候选 `0.7.1-custom.5`，版本码 `706`，应用标识 `com.bookorbit.compat`。
+更新于 2026-11-09，候选 `0.7.1-custom.6`，版本码 `707`，应用标识 `com.bookorbit.compat`。
 
 ## 自动检查
 
 - Full 与 F-Droid 各通过280项JVM测试，零失败、零错误、零跳过。
 - JS兼容与阅读交互回归22项通过。
 - 中英文覆盖和格式参数检查通过，共541项资源。
-- 双变体Lint、APK与原生测试包构建通过。两种Lint均零错误、146项警告和1项提示，包含历史资源、私有View构造和触摸可访问性等提醒。
+- 双变体Lint、APK与原生测试包构建通过。两种Lint均零错误、145项警告和1项提示，包含历史资源、私有View构造和触摸可访问性等提醒。
 - `git diff --check`通过。新文件和主要新增界面代码经过ktfmt或Prettier。
+
+## 应用名称和图标
+
+- 旧custom.5在同一模拟器运行两项品牌检查均失败，实际名称为“BookOrbit 中文版”，图标背景为褐色 `#B45309`。原因是调试资源覆盖主名称和图标，并附带D角标。
+- custom.6移除调试名称和图标覆盖，主资源中英文名称均为BookOrbit，蓝色背景为 `#2563EB`，白色轨道矢量共用。普通与圆形图标均检查实际绘制像素。
+- 模拟器从custom.5覆盖升级到custom.6成功。Full与F-Droid的两项品牌检查分别通过，编译标签也核对为BookOrbit。
+- 旧包失败日志、新包日志和图标渲染保存在 `app/build/reports/custom6-branding`。手机桌面图标实际显示待确认。
 
 ## 字体回归
 
-此前custom.3的首次字体门控失败证据保留在 `custom4-baseline/reader-ui-validation/startup-regression.txt`，值为 `fontReadyAtLoaded=false`。custom.4已增加整本书首屏门控，本轮继续处理每次章节创建独立iframe的问题。
+此前custom.3的首次字体门控失败证据保留在 `custom4-baseline/reader-ui-validation/startup-regression.txt`，值为 `fontReadyAtLoaded=false`。custom.4已增加整本书首屏门控，custom.5继续处理每次章节创建独立iframe的问题，custom.6保留该流程并再次回归。
 
 - Foliate的章节显示先等待异步 `afterLoad`，桥接对新文档注入样式并等待所选字重和该文档的FontFaceSet，再开始排版和显示。
 - JS测试使用两个独立章节文档，逐项释放字体Promise，检查两个章节各自等待。
@@ -39,13 +46,13 @@
 
 环境为Android15/API35、arm64、独立AVD `bookorbit-reader-api35`，常规1080×2400像素，宿主GPU。
 
-- `ReaderInteractionTest` 7项通过，检查设置、字体、间距、模式、护眼、自动阅读、目录搜索点选、书名详情回调和内容页签。
+- Full变体的13项原生测试通过，其中 `AppBrandingTest` 2项检查中英文名称和蓝白图标，`ReaderInteractionTest` 7项通过，检查设置、字体、间距、模式、护眼、自动阅读、目录搜索点选、书名详情回调和内容页签。
 - `ReaderEngineTest` 1项通过，检查实际WebView的字体、可见正文、位置恢复、章节、按键、自动阅读、跟手卷页和帧测量。
 - `BookExperienceTest` 3项通过，检查首页搜索及四个快捷入口、紧凑书籍概览、正确格式继续阅读、服务端阅读记录摘要和更多操作。
-- 目录和书籍界面相关10项在320dp窄屏、1.5倍系统字号下全部通过。
+- 目录和书籍界面相关10项在320dp窄屏、1.5倍系统字号下全部通过。F-Droid变体独立安装后另通过2项品牌测试。
 - 测试使用隔离会话、MockWebServer与自制文本。书籍体验截图展示组件，完整应用导航与生产数据待手机验收。
 
-截图保存在本机 `app/build/reports/custom5-reader-ui/reader-ui-validation/`，窄屏位于 `custom5-reader-narrow`。构建目录受Git忽略。
+截图保存在本机 `app/build/reports/custom6-reader-ui/reader-ui-validation/`，窄屏位于 `custom6-reader-narrow`。构建目录受Git忽略。
 
 ## 流畅度记录
 
@@ -53,7 +60,7 @@
 
 | 候选     | 帧样本 | 输入至起动 | 绘制中位数 | 总帧中位数 | 总帧P95  | 最大总帧 |
 | -------- | ------ | ---------- | ---------- | ---------- | -------- | -------- |
-| custom.5 | 105    | 29.17 ms   | 0.259 ms   | 16.98 ms   | 17.54 ms | 33.68 ms |
+| custom.6 | 105    | 31.95 ms   | 0.284 ms   | 16.98 ms   | 17.57 ms | 33.89 ms |
 
 本次104帧超过16.7ms预算，仍有慢帧。模拟器各次采样有波动，实际手机触控延迟、帧率和内存验收待完成。
 
@@ -67,10 +74,10 @@
 
 | 变体    | APK                                                       | SHA-256                                                            |
 | ------- | --------------------------------------------------------- | ------------------------------------------------------------------ |
-| Full    | `app/build/outputs/apk/full/debug/app-full-debug.apk`     | `eba52a10053bb3fda09f42c18c7c3484b0bc27a7e418cc55e167ec756d3190fc` |
-| F-Droid | `app/build/outputs/apk/fdroid/debug/app-fdroid-debug.apk` | `fea2be5a739665a4560d3b26a0908adbeb9a5752f25ccf3d9942a5ceb7741b96` |
+| Full    | `app/build/outputs/apk/full/debug/app-full-debug.apk`     | `8a7d2cf0b2a4c1c5aa58f15ae12b8acf191d99e3f06192d682e1277c642f4b0d` |
+| F-Droid | `app/build/outputs/apk/fdroid/debug/app-fdroid-debug.apk` | `f74e84ba6a85ee2f69bf2abdd29d46e6cb3b19853071086fb7a8af5e6fcf5b81` |
 
-自用Full包为 `app/build/outputs/custom/BookOrbit-0.7.1-custom.5-zh-CN.apk`。机器记录为本机 `app/build/reports/custom-validation.json`。
+自用Full包为 `app/build/outputs/custom/BookOrbit-0.7.1-custom.6-zh-CN.apk`。机器记录为本机 `app/build/reports/custom-validation.json`。
 
 ## 尚待完成
 

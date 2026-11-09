@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="background">#FF0A0A0A</color>
-    <color name="ic_launcher_background">#FF0A0A0A</color>
+    <color name="ic_launcher_background">#FF2563EB</color>
     <!-- Matches ui/theme/Color.kt's Accent; used as colorPrimary in themes.xml's MediaRouter overlay. -->
     <color name="accent">#FF4A9EFF</color>
 </resources>

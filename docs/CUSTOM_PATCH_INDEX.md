@@ -47,3 +47,7 @@
 - `HomeShortcuts` 复用现有搜索、书库、下载、笔记与统计。`BookDetailScreen` 的紧凑概览和固定按钮保留原有文件格式选择逻辑。
 - `BookReadingLog`、`ApiService`、`BookDetailRepository/ViewModel` 和 `ReadingLogPanel` 对齐服务端书籍进度及阅读会话端点。每页20条，保留失败提示和重试。
 - `ReaderProgressSyncTest` 与 `ReaderSyncHttpTest` 覆盖跨端位置、离线、回退和实际HTTP序列化。`ReaderEngineTest` 验证章节字体及手持卷页，`BookExperienceTest` 验证首页与详情组件。
+
+## BA-C24
+
+`app_name`中英文均为BookOrbit，主资源 `ic_launcher_background` 为蓝色 `#2563EB`，复用白色轨道前景。移除 `app/src/debug` 中的名称清单和图标覆盖，两个发行变体均继承主资源。升级后复验编译标签、安装后的普通/圆形图标以及原签名和兼容应用标识。测试入口为 `AppBrandingTest`。
