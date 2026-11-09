@@ -57,7 +57,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 @Composable
-fun ReaderScreen(onBack: () -> Unit, vm: ReaderViewModel = hiltViewModel()) {
+fun ReaderScreen(
+    onBack: () -> Unit,
+    onBookDetails: () -> Unit = onBack,
+    vm: ReaderViewModel = hiltViewModel(),
+) {
     val ui by vm.ui.collectAsStateWithLifecycle()
     val controller = remember { ReaderController() }
     var ready by remember { mutableStateOf(false) }
@@ -79,6 +83,7 @@ fun ReaderScreen(onBack: () -> Unit, vm: ReaderViewModel = hiltViewModel()) {
     val owner = LocalLifecycleOwner.current
     DisposableEffect(owner) {
         val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) vm.checkSyncedProgress()
             if (event == Lifecycle.Event.ON_STOP) {
                 autoReading = false
                 vm.flush()
@@ -113,6 +118,14 @@ fun ReaderScreen(onBack: () -> Unit, vm: ReaderViewModel = hiltViewModel()) {
                     batteryPercent = if (level >= 0 && scale > 0) level * 100 / scale else null
                     kotlinx.coroutines.delay(60_000)
                 }
+            }
+        }
+    }
+    LaunchedEffect(owner) {
+        owner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            while (true) {
+                vm.checkSyncedProgress()
+                kotlinx.coroutines.delay(15_000)
             }
         }
     }
@@ -434,6 +447,11 @@ fun ReaderScreen(onBack: () -> Unit, vm: ReaderViewModel = hiltViewModel()) {
             author = ui.author,
             description = ui.description,
             annotations = ui.annotations,
+            onBookDetails = {
+                vm.flush()
+                tocVisible = false
+                onBookDetails()
+            },
             onSearch = {
                 tocVisible = false
                 searchVisible = true
@@ -448,6 +466,36 @@ fun ReaderScreen(onBack: () -> Unit, vm: ReaderViewModel = hiltViewModel()) {
                 controller.goTo(href)
             },
             onDismiss = { tocVisible = false },
+        )
+    }
+    ui.syncedPosition?.let { position ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = vm::dismissSyncedProgress,
+            title = { Text(stringResource(R.string.rs_cloud_progress)) },
+            text = {
+                Text(
+                    stringResource(
+                        R.string.rs_cloud_progress_message,
+                        ((position.fraction ?: 0.0) * 100).toInt(),
+                    )
+                )
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(
+                    onClick = {
+                        vm.dismissSyncedProgress()
+                        if (position.cfi != null) controller.goTo(position.cfi)
+                        else controller.goToFraction(position.fraction ?: 0.0)
+                    }
+                ) {
+                    Text(stringResource(R.string.rs_cloud_jump))
+                }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = vm::keepCurrentProgress) {
+                    Text(stringResource(R.string.rs_cloud_keep))
+                }
+            },
         )
     }
     noteDialog?.let { initial ->

@@ -364,22 +364,16 @@ class ReaderEngineTest {
                 """{"device":"Android API35 emulator","graphics":"$graphics","inputToMotionMs":$inputToMotionMs,"frames":${frames.size},"medianMs":${frames[frames.size / 2] / 1_000_000.0},"p95Ms":${frames[(frames.size * .95).toInt().coerceAtMost(frames.lastIndex)] / 1_000_000.0},"drawMedianMs":${drawFrames[drawFrames.size / 2] / 1_000_000.0},"frameIntervalMedianMs":${vsyncFrames[vsyncFrames.size / 2] / 1_000_000.0},"over16_7Ms":${frames.count { it > 16_700_000 }},"maxMs":${frames.last() / 1_000_000.0}}"""
             File(context.getExternalFilesDir(null), "reader-ui-validation/frame-metrics.json")
                 .writeText(result)
-            // Tiny drag movements must never reach Foliate before native curl takes over.
-            val scrollBefore =
-                evaluate(webView, "document.querySelector('foliate-view').renderer.start")
-            val touchTime = SystemClock.uptimeMillis()
-            InstrumentationRegistry.getInstrumentation().runOnMainSync {
-                for ((time, action, x) in
-                    listOf(
-                        Triple(0L, android.view.MotionEvent.ACTION_DOWN, webView.width * .8f),
-                        Triple(20L, android.view.MotionEvent.ACTION_MOVE, webView.width * .8f - 8f),
-                    )) {
+            SystemClock.sleep(200)
+            val beforeHold = fraction.get()
+            fun touch(action: Int, x: Float, down: Long) {
+                InstrumentationRegistry.getInstrumentation().runOnMainSync {
                     android.view.MotionEvent.obtain(
-                            touchTime,
-                            touchTime + time,
+                            down,
+                            SystemClock.uptimeMillis(),
                             action,
-                            x,
-                            webView.height * .5f,
+                            webView.width * x,
+                            webView.height * .55f,
                             0,
                         )
                         .also {
@@ -388,26 +382,41 @@ class ReaderEngineTest {
                         }
                 }
             }
-            SystemClock.sleep(100)
-            assertEquals(
-                "No pre-animation page shift",
-                scrollBefore,
-                evaluate(webView, "document.querySelector('foliate-view').renderer.start"),
+            val touchTime = SystemClock.uptimeMillis()
+            touch(android.view.MotionEvent.ACTION_DOWN, .85f, touchTime)
+            touch(android.view.MotionEvent.ACTION_MOVE, .5f, touchTime)
+            SystemClock.sleep(800)
+            assertTrue(
+                "Paper preview remains visible while the finger is down",
+                host.isTurning && host.dragProgress in 0.25f..0.5f,
             )
-            InstrumentationRegistry.getInstrumentation().runOnMainSync {
-                android.view.MotionEvent.obtain(
-                        touchTime,
-                        touchTime + 150,
-                        android.view.MotionEvent.ACTION_CANCEL,
-                        webView.width * .8f - 8,
-                        webView.height * .5f,
-                        0,
-                    )
-                    .also {
-                        webView.dispatchTouchEvent(it)
-                        it.recycle()
-                    }
+            assertEquals(
+                "Holding does not commit reading progress",
+                beforeHold,
+                fraction.get(),
+                .000001,
+            )
+            screenshot("paper-held-under-finger")
+            touch(android.view.MotionEvent.ACTION_UP, .45f, touchTime)
+            waitUntil("released gesture commits the page", failure) {
+                !host.isTurning && fraction.get() > beforeHold
             }
+            SystemClock.sleep(200)
+            val beforeCancel = fraction.get()
+            val cancelTime = SystemClock.uptimeMillis()
+            touch(android.view.MotionEvent.ACTION_DOWN, .85f, cancelTime)
+            touch(android.view.MotionEvent.ACTION_MOVE, .5f, cancelTime)
+            SystemClock.sleep(250)
+            touch(android.view.MotionEvent.ACTION_MOVE, .84f, cancelTime)
+            touch(android.view.MotionEvent.ACTION_UP, .84f, cancelTime)
+            waitUntil("dragging back restores the page", failure) { !host.isTurning }
+            assertEquals(
+                "Cancelled preview does not change saved progress",
+                beforeCancel,
+                fraction.get(),
+                .000001,
+            )
+            SystemClock.sleep(200)
             val beforeSwipe = fraction.get()
             InstrumentationRegistry.getInstrumentation().runOnMainSync {
                 val t = SystemClock.uptimeMillis()
@@ -445,6 +454,14 @@ class ReaderEngineTest {
             controller.applyStyles(settings)
             controller.nextChapter()
             waitUntil("next chapter", failure) { chapter.get()?.contains("chapter2.xhtml") == true }
+            assertEquals(
+                "New chapter has its selected font before relocation",
+                "true",
+                evaluate(
+                    webView,
+                    """(() => { const d=document.querySelector('foliate-view').renderer.getContents()[0].doc; return d.fonts.status==='loaded' && d.fonts.check('22px ${family.cssFamily}') && d.defaultView.getComputedStyle(d.body).fontFamily.includes('${family.cssFamily}'); })()""",
+                ),
+            )
             controller.previousChapter()
             waitUntil("previous chapter", failure) {
                 chapter.get()?.contains("chapter1.xhtml") == true

@@ -149,6 +149,7 @@ data class FileProgress(
     val percentage: Double = 0.0,
     val pageNumber: Int? = null,
     val updatedAt: String? = null,
+    val textUpdatedAt: String? = null,
 )
 
 @Serializable
@@ -156,6 +157,7 @@ data class SaveFileProgress(
     val cfi: String? = null,
     val percentage: Double,
     val pageNumber: Int? = null,
+    val source: String? = null,
 )
 
 /** `GET /cbz/files/{fileId}/pages`. */

@@ -1,64 +1,77 @@
 # Android 阅读器验收记录
 
-更新于 2026-11-09，候选 `0.7.1-custom.4`，版本码 `705`，应用标识 `com.bookorbit.compat`。
+更新于 2026-11-09，候选 `0.7.1-custom.5`，版本码 `706`，应用标识 `com.bookorbit.compat`。
 
 ## 自动检查
 
-- Full 与 F-Droid 各通过 270 项 JVM 测试，零失败、零错误、零跳过。
-- JS 兼容与阅读交互回归 21 项通过。
-- 中英文覆盖和格式参数检查通过，共 526 项资源。
-- 双变体 Lint、APK 与原生测试包构建通过。两种 Lint 均零错误、144 项警告。
-- `git diff --check` 通过。本轮主要阅读界面和新文件经过 ktfmt 或 Prettier，其他区域保持原有格式。
+- Full 与 F-Droid 各通过280项JVM测试，零失败、零错误、零跳过。
+- JS兼容与阅读交互回归22项通过。
+- 中英文覆盖和格式参数检查通过，共541项资源。
+- 双变体Lint、APK与原生测试包构建通过。两种Lint均零错误、146项警告和1项提示，包含历史资源、私有View构造和触摸可访问性等提醒。
+- `git diff --check`通过。新文件和主要新增界面代码经过ktfmt或Prettier。
 
-## 问题复现与修复验收
+## 字体回归
 
-- 在旧 `custom.3` 上加入首屏字体就绪断言，实际失败。记录为 `custom4-baseline/reader-ui-validation/startup-regression.txt`，值为 `fontReadyAtLoaded=false`。旧流程先报告已加载，随后异步注入字体。
-- 新版在打开图书前装载缓存字体，桥接等待字体与布局，Android 宿主等待可见帧提交。首次打开和重新创建 WebView 均检查字体已加载且正文使用所选家族。恢复约 42% 的实际 CFI 位置通过，已保存文字位于可见页面，截图包含正文。百分比会随分页重排取整，验收以实际文字锚点为准。加载过程的临时位置在宿主内合并，就绪后才通知进度存储。
-- 卷页原流程在输入后查询边界、等待目标页并截取整个窗口。新版在正文稳定后预缓存纯正文，输入直接开始原生动画，小幅拖动的底层正文偏移断言通过。
-- 连续翻页等待 Foliate 导航 Promise 完成，避免页码事件早于内部解锁而丢失下一次操作。
-- 设置面板按参考图使用紧凑行、圆形颜色、翻页分段选择和底部导航。新增覆盖翻页、纸纹/柔光背景、带封面作者的详情/目录/金句/笔记页签。
+此前custom.3的首次字体门控失败证据保留在 `custom4-baseline/reader-ui-validation/startup-regression.txt`，值为 `fontReadyAtLoaded=false`。custom.4已增加整本书首屏门控，本轮继续处理每次章节创建独立iframe的问题。
 
-帧提交使用 Android 官方说明中的硬件帧提交回调，旧 API 与软件渲染保留兼容路径，这两条路径尚未在本轮设备运行。该回调对应已渲染并提交的帧。[Android ViewTreeObserver](<https://developer.android.com/reference/android/view/ViewTreeObserver#registerFrameCommitCallback(java.lang.Runnable)>)
+- Foliate的章节显示先等待异步 `afterLoad`，桥接对新文档注入样式并等待所选字重和该文档的FontFaceSet，再开始排版和显示。
+- JS测试使用两个独立章节文档，逐项释放字体Promise，检查两个章节各自等待。
+- 原生WebView使用自制EPUB和真实Noto Serif字体，检查首次打开、重新创建WebView、恢复非零CFI和切换章节后字体已就绪、正文使用所选家族。首屏包含正文并恢复保存的文字锚点。
+- 中文字体家族的实际字形、加载速度和离线效果仍需用户手机验收。
+
+## 跟手纸张与设置
+
+- 左右侧按住即抓住纸张，拖动决定卷曲进度，保持800ms仍保留纸张。预览页位置在宿主缓冲，松手完成后提交进度。
+- 拖回起点及取消事件恢复原CFI。真实WebView测试检查取消前后进度一致、提交后位置变化、连续及反向翻页、音量键、自动阅读和覆盖模式。
+- 中心区域保留长按选字。正文预缓存最长边1280像素，同时持有一张，缺少缓存时执行普通翻页。退出、尺寸变化和状态结束回收。
+- 阅读设置沿用参考截图的亮度、字号、字体、七色、背景、翻页分段、间距、自动阅读和底部导航。
+- 320dp窄屏与1.5倍字号下完成目录搜索并点选结果。发现的列表位置与键盘弹出后的状态栏重叠均已修复，新增系统安全边距断言。
+
+## 进度同步
+
+- 使用现有服务器文件进度端点和同一账号的CFI/百分比，文本位置携带 `source=text`，优先使用 `textUpdatedAt`。
+- 单元回归覆盖网页回退、较新网页位置、较新离线位置补传、失败重试、自己的回执、设备时间偏差，以及已接收但尚未显示的位置。
+- `ReaderSyncHttpTest` 使用生产Retrofit接口与序列化器，经过真实本地HTTP连接验证打开网页位置、Android上传、网页向后修改、Android收到新位置和重新打开恢复。
+- 阅读页回前台及活动时每15秒检查，先处理本机待写检查点。位置变化提示接续或保留当前，保留会写回当前位置。后台暂停检查。
+- 此轮为隔离HTTP验收。实际NAS、手机与网页的双端接续、断网恢复及日志时间仍待联调。
 
 ## 原生模拟器验收
 
-环境为 Android 15 / API 35、arm64、独立 AVD `bookorbit-reader-api35`，1080×2400 像素，宿主 GPU。
+环境为Android15/API35、arm64、独立AVD `bookorbit-reader-api35`，常规1080×2400像素，宿主GPU。
 
-- 6 项 Compose 交互测试通过。字号/字体、间距与翻页模式、护眼、自动阅读、当前章/搜索/选择、覆盖与背景设置、详情/金句/笔记页签均检查。
-- 1 项真实 WebView 引擎测试通过，包含自制 EPUB、隔离字体下载、本地字体处理器、首次与重新进入、非零阅读位置、正文宽度和可见绘制、护眼底色、音量键、自动阅读与停止、连续及反向卷页、横向滑动、覆盖翻页和章节跳转。
-- 相同 6 项交互在 320dp 窄屏和 1.5 倍系统字号下通过，底部导航断言通过。
-- 测试使用隔离会话、MockWebServer 和自制文本。字体文件为模拟器的真实 Noto Serif，中文回退字形与用户服务器上的各中文字体仍需在手机逐项验收。
+- `ReaderInteractionTest` 7项通过，检查设置、字体、间距、模式、护眼、自动阅读、目录搜索点选、书名详情回调和内容页签。
+- `ReaderEngineTest` 1项通过，检查实际WebView的字体、可见正文、位置恢复、章节、按键、自动阅读、跟手卷页和帧测量。
+- `BookExperienceTest` 3项通过，检查首页搜索及四个快捷入口、紧凑书籍概览、正确格式继续阅读、服务端阅读记录摘要和更多操作。
+- 目录和书籍界面相关10项在320dp窄屏、1.5倍系统字号下全部通过。
+- 测试使用隔离会话、MockWebServer与自制文本。书籍体验截图展示组件，完整应用导航与生产数据待手机验收。
 
-本机截图在 `app/build/reports/custom4-reader-ui/reader-ui-validation/`，窄屏在 `custom4-reader-narrow`。旧版失败证据在 `custom4-baseline`。构建报告受 Git 忽略。
+截图保存在本机 `app/build/reports/custom5-reader-ui/reader-ui-validation/`，窄屏位于 `custom5-reader-narrow`。构建目录受Git忽略。
 
-## 流畅度测量
+## 流畅度记录
 
-使用 Window FrameMetrics，宿主 GPU 后端日志确认 Apple M4 Pro。当前版本先验证首次卷页并截图，随后清空帧样本，采集六次正向及一次反向操作。相邻正向操作间保留 150ms 以覆盖缓存生成，截图操作不计入本轮动画帧采样。
+使用Window FrameMetrics，宿主GPU为Apple M4 Pro。首次操作与截图后清空采样，再采集六次正向及一次反向操作，相邻操作保留150ms预缓存时间。
 
-| 版本与后端                 | 帧样本 | 输入至起动 | 绘制中位数 | 帧间隔中位数 | 总帧中位数 | 总帧 P95 |
-| -------------------------- | ------ | ---------- | ---------- | ------------ | ---------- | -------- |
-| custom.3 宿主 GPU 历史记录 | 200    | 未记录     | 0.212 ms   | 16.67 ms     | 17.10 ms   | 41.99 ms |
-| custom.4 宿主 GPU          | 129    | 34.96 ms   | 0.201 ms   | 16.67 ms     | 17.02 ms   | 17.58 ms |
+| 候选     | 帧样本 | 输入至起动 | 绘制中位数 | 总帧中位数 | 总帧P95  | 最大总帧 |
+| -------- | ------ | ---------- | ---------- | ---------- | -------- | -------- |
+| custom.5 | 105    | 29.17 ms   | 0.259 ms   | 16.98 ms   | 17.54 ms | 33.68 ms |
 
-当前样本中 129 帧超过 16.7ms，仍有超预算帧。两次测量包含不同的快照与交互时序，表格作为各版本记录，不能据此推算手机帧率。实际手机的帧率、触控响应与内存验收待完成。
-
-快照最长边 1280 像素，一次只持有一张。缓存生成与纹理准备放在输入路径以外，缺少缓存时普通翻页，结束、尺寸变化和退出回收。
+本次104帧超过16.7ms预算，仍有慢帧。模拟器各次采样有波动，实际手机触控延迟、帧率和内存验收待完成。
 
 ## 新旧包兼容性
 
-与旧 `0.6.0-compat.1` 中文包应用标识一致，版本码递增。旧包与本机新包证书 SHA-256 均为 `bbbb7c5af72d6774bf27930206d530b0ac09bd32a4c2402ebf77823c4779e983`。签名与版本条件支持覆盖升级，手机实际安装和数据保留仍待验收。
+与旧 `0.6.0-compat.1` 中文包应用标识相同，版本码递增。旧包与本机新包证书SHA-256均为 `bbbb7c5af72d6774bf27930206d530b0ac09bd32a4c2402ebf77823c4779e983`。签名及版本条件支持覆盖升级，手机实际安装和数据保留待验收。
 
-使用本机既有调试签名生成自用候选。GitHub CI 自行生成调试密钥，其 APK 签名可能不同。本机私钥未上传。
+自用候选使用本机既有调试签名，私钥留在本机。GitHub CI生成的调试签名可能不同。
 
 ## 产物
 
 | 变体    | APK                                                       | SHA-256                                                            |
 | ------- | --------------------------------------------------------- | ------------------------------------------------------------------ |
-| Full    | `app/build/outputs/apk/full/debug/app-full-debug.apk`     | `f9d7ed7c1e6735becfdc2da68b8cb78bac4c96454139edeb61973f53aef4a2f2` |
-| F-Droid | `app/build/outputs/apk/fdroid/debug/app-fdroid-debug.apk` | `86deb39447074be494eaacca1897026f6b168c6140b93d2c4702f7236fcec04b` |
+| Full    | `app/build/outputs/apk/full/debug/app-full-debug.apk`     | `eba52a10053bb3fda09f42c18c7c3484b0bc27a7e418cc55e167ec756d3190fc` |
+| F-Droid | `app/build/outputs/apk/fdroid/debug/app-fdroid-debug.apk` | `fea2be5a739665a4560d3b26a0908adbeb9a5752f25ccf3d9942a5ceb7741b96` |
 
-自用 Full 包保存为 `app/build/outputs/custom/BookOrbit-0.7.1-custom.4-zh-CN.apk`，摘要一致。机器记录为本机 `app/build/reports/custom-validation.json`。
+自用Full包为 `app/build/outputs/custom/BookOrbit-0.7.1-custom.5-zh-CN.apk`。机器记录为本机 `app/build/reports/custom-validation.json`。
 
 ## 尚待完成
 
-手机覆盖安装、真实中文字体、离线恢复、网页端 Android 阅读日志，以及其他文件引擎的手机验收。仿真目前在完成滑动后播放。跟手拖动取消、图片背景、章节字数与精确页数等差距见 `CUSTOMIZATION_REMAINING.md`。
+手机覆盖升级、真实中文字体、实际NAS跨端进度和日志联调，以及其他文件引擎的手机回归。图片背景、段评、章节字数和精确页数等差距见 `CUSTOMIZATION_REMAINING.md`。

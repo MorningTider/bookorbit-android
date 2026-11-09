@@ -25,6 +25,11 @@ class BookDetailRepository @Inject constructor(
     private val pendingReadStatusDao: PendingReadStatusDao,
     private val syncScheduler: SyncScheduler,
 ) {
+    suspend fun bookProgress(id: Int): Map<Int, Double> =
+        api.getBookFileProgress(id).associate { it.fileId to it.percentage }
+
+    suspend fun readingLog(id: Int, page: Int) = api.getBookReadingLog(id, page)
+
     suspend fun detail(id: Int): BookDetail = api.getBookDetail(id)
 
     suspend fun authorBooks(id: Int): List<BookRecommendation> = api.getAuthorBooksForBook(id)

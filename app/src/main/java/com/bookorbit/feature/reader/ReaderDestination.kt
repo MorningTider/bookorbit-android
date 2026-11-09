@@ -25,9 +25,16 @@ import com.bookorbit.feature.reader.pdf.PdfReaderScreen
 
 enum class ReaderKind { EBOOK, PDF, COMIC }
 
-/** Select before creating a native reader VM, so web reading has only one progress/session writer. */
+/**
+ * Select before creating a native reader VM, so web reading has only one progress/session writer.
+ */
 @Composable
-fun ReaderDestination(kind: ReaderKind, onBack: () -> Unit, vm: ReaderHostViewModel = hiltViewModel()) {
+fun ReaderDestination(
+    kind: ReaderKind,
+    onBack: () -> Unit,
+    onBookDetails: () -> Unit = onBack,
+    vm: ReaderHostViewModel = hiltViewModel(),
+) {
     val preferences by vm.preferences.collectAsStateWithLifecycle()
     var useApp by rememberSaveable { mutableStateOf(false) }
     val prefs = preferences ?: return
@@ -36,7 +43,7 @@ fun ReaderDestination(kind: ReaderKind, onBack: () -> Unit, vm: ReaderHostViewMo
         ServerReaderScreen(kind, vm, onBack = onBack, onOpenApp = { useApp = true })
     } else {
         when (kind) {
-            ReaderKind.EBOOK -> ReaderScreen(onBack)
+            ReaderKind.EBOOK -> ReaderScreen(onBack, onBookDetails)
             ReaderKind.PDF -> PdfReaderScreen(onBack)
             ReaderKind.COMIC -> ComicReaderScreen(onBack)
         }

@@ -92,6 +92,9 @@ fun BookDetailScreen(
 ) {
     val ui by vm.ui.collectAsStateWithLifecycle()
     val collections by vm.collections.collectAsStateWithLifecycle()
+    androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+        if (!ui.loading) vm.refreshReadingState()
+    }
     var statusSheet by remember { mutableStateOf(false) }
     var collectionSheet by remember { mutableStateOf(false) }
     val context = LocalContext.current
@@ -109,9 +112,19 @@ fun BookDetailScreen(
     }
 
     Scaffold(
+        bottomBar = {
+            ui.book?.let { book ->
+                DetailReadingBar(book, ui.fileProgress, onRead, onReadPdf, onReadComic, onListen)
+            }
+        },
         topBar = {
             TopAppBar(
-                title = { Text(ui.book?.title ?: stringResource(R.string.detail_book_details), maxLines = 1) },
+                title = {
+                    Text(
+                        ui.book?.title ?: stringResource(R.string.detail_book_details),
+                        maxLines = 1,
+                    )
+                },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.back))
@@ -133,10 +146,6 @@ fun BookDetailScreen(
                     book = ui.book!!,
                     vm = vm,
                     ui = ui,
-                    onRead = onRead,
-                    onReadPdf = onReadPdf,
-                    onReadComic = onReadComic,
-                    onListen = onListen,
                     onBookClick = onBookClick,
                     onAuthorClick = onAuthorClick,
                     onSeriesClick = onSeriesClick,
@@ -175,10 +184,6 @@ private fun BookDetailContent(
     book: BookDetail,
     vm: BookDetailViewModel,
     ui: BookDetailViewModel.UiState,
-    onRead: (Int) -> Unit,
-    onReadPdf: (Int) -> Unit,
-    onReadComic: (Int) -> Unit,
-    onListen: (Int) -> Unit,
     onBookClick: (Int) -> Unit,
     onAuthorClick: (id: Int, name: String) -> Unit,
     onSeriesClick: (id: Int, name: String) -> Unit,
@@ -186,11 +191,7 @@ private fun BookDetailContent(
     onOpenStatusSheet: () -> Unit,
     onOpenCollectionSheet: () -> Unit,
 ) {
-    val imageUrls = LocalImageUrls.current
     val uriHandler = LocalUriHandler.current
-    val canListen = BookFiles.isAudiobook(book)
-    val readingTarget = BookFiles.readingTarget(book)
-    val canRead = readingTarget != BookFiles.ReadingTarget.None
     val goodreadsId = book.providerIds["goodreads"]
 
     var tab by rememberSaveable { mutableIntStateOf(0) }
@@ -199,143 +200,203 @@ private fun BookDetailContent(
     Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
         DetailHero(book, onAuthorClick = onAuthorClick, onSeriesClick = onSeriesClick)
 
-        // Primary actions side by side; download state sits underneath.
-        Column(modifier = Modifier.padding(horizontal = 20.dp).padding(top = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-                if (canRead) {
-                    Button(
-                        onClick = {
-                            when (readingTarget) {
-                                is BookFiles.ReadingTarget.Pdf -> onReadPdf(book.id)
-                                is BookFiles.ReadingTarget.Comic -> onReadComic(book.id)
-                                else -> onRead(book.id)
-                            }
-                        },
-                        modifier = Modifier.weight(1f),
-                    ) {
-                        Icon(Icons.Filled.Book, contentDescription = null)
-                        Text(stringResource(R.string.read), modifier = Modifier.padding(start = 8.dp))
-                    }
-                }
-                if (canListen) {
-                    if (canRead) {
-                        androidx.compose.material3.OutlinedButton(onClick = { onListen(book.id) }, modifier = Modifier.weight(1f)) {
-                            Icon(Icons.Filled.Headset, contentDescription = null)
-                            Text(stringResource(R.string.listen), modifier = Modifier.padding(start = 8.dp))
-                        }
-                    } else {
-                        Button(onClick = { onListen(book.id) }, modifier = Modifier.weight(1f)) {
-                            Icon(Icons.Filled.Headset, contentDescription = null)
-                            Text(stringResource(R.string.listen), modifier = Modifier.padding(start = 8.dp))
-                        }
-                    }
-                }
-            }
-            DownloadControl(download, onStartDownload = onStartDownload, onRemove = vm::removeDownload)
+        Column(Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) {
+            DownloadControl(download, onStartDownload, vm::removeDownload)
         }
 
         FormatChips(book, ui.fileProgress)
 
-        val tabs = listOf(
-            stringResource(R.string.detail_tab_details),
-            stringResource(R.string.detail_tab_files),
-            if (ui.highlights.isNotEmpty()) stringResource(R.string.detail_tab_highlights_n, ui.highlights.size) else stringResource(R.string.detail_tab_highlights),
-        )
-        TabRow(selectedTabIndex = tab, modifier = Modifier.padding(top = 8.dp)) {
+        val tabs =
+            listOf(
+                stringResource(R.string.detail_tab_details),
+                stringResource(R.string.detail_tab_files),
+                if (ui.highlights.isNotEmpty())
+                    stringResource(R.string.detail_tab_highlights_n, ui.highlights.size)
+                else stringResource(R.string.detail_tab_highlights),
+                stringResource(R.string.detail_tab_reading_log),
+            )
+        androidx.compose.material3.ScrollableTabRow(
+            selectedTabIndex = tab,
+            edgePadding = 12.dp,
+            modifier = Modifier.padding(top = 8.dp),
+        ) {
             tabs.forEachIndexed { i, label ->
-                Tab(selected = tab == i, onClick = { tab = i }, text = { Text(label, maxLines = 1) })
+                Tab(
+                    selected = tab == i,
+                    onClick = { tab = i },
+                    text = { Text(label, maxLines = 1) },
+                )
             }
         }
 
         when (tab) {
-            0 -> DetailsTab(
-                book = book,
-                vm = vm,
-                ui = ui,
-                goodreadsId = goodreadsId,
-                onBookClick = onBookClick,
-                onOpenStatusSheet = onOpenStatusSheet,
-                onOpenCollectionSheet = onOpenCollectionSheet,
-                onOpenUri = { uriHandler.openUri(it) },
-            )
+            0 ->
+                DetailsTab(
+                    book = book,
+                    vm = vm,
+                    ui = ui,
+                    goodreadsId = goodreadsId,
+                    onBookClick = onBookClick,
+                    onOpenStatusSheet = onOpenStatusSheet,
+                    onOpenCollectionSheet = onOpenCollectionSheet,
+                    onOpenUri = { uriHandler.openUri(it) },
+                )
             1 -> FilesTab(book)
-            else -> HighlightsTab(ui.highlights)
+            2 -> HighlightsTab(ui.highlights)
+            else ->
+                ReadingLogPanel(
+                    ui.readingLog,
+                    ui.logLoading,
+                    ui.logError,
+                    onLoadMore = { vm.loadReadingLog(append = true) },
+                    onRetry = { vm.loadReadingLog(append = ui.readingLog != null) },
+                )
         }
 
         Box(Modifier.height(24.dp))
     }
 }
 
-/** Cover on a soft tinted backdrop, with title, authors, narrators and series centred beneath. */
+/** Compact cover-led overview keeps metadata and primary reading controls in view. */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun DetailHero(
+internal fun DetailHero(
     book: BookDetail,
-    onAuthorClick: (id: Int, name: String) -> Unit,
-    onSeriesClick: (id: Int, name: String) -> Unit,
+    onAuthorClick: (Int, String) -> Unit,
+    onSeriesClick: (Int, String) -> Unit,
 ) {
-    val imageUrls = LocalImageUrls.current
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f))
-            .padding(horizontal = 20.dp, vertical = 20.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
+    Row(
+        Modifier.fillMaxWidth()
+            .background(
+                androidx.compose.ui.graphics.Brush.verticalGradient(
+                    listOf(
+                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = .45f),
+                        MaterialTheme.colorScheme.background,
+                    )
+                )
+            )
+            .padding(20.dp),
+        horizontalArrangement = Arrangement.spacedBy(20.dp),
     ) {
         AsyncImage(
-            model = imageUrls.cover(book.id),
+            LocalImageUrls.current.cover(book.id),
             contentDescription = book.title,
             contentScale = ContentScale.Crop,
-            modifier = Modifier
-                .size(width = 150.dp, height = 225.dp)
-                .clip(RoundedCornerShape(10.dp)),
+            modifier = Modifier.size(108.dp, 162.dp).clip(RoundedCornerShape(10.dp)),
         )
-        Text(
-            book.title ?: stringResource(R.string.card_unknown_title),
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Bold,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.padding(top = 16.dp),
-        )
-        book.subtitle?.let {
-            Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
-        }
-        if (book.authors.isNotEmpty()) {
-            // Each author is its own tap target; a long list wraps onto the next line.
-            @OptIn(ExperimentalLayoutApi::class)
-            FlowRow(
-                modifier = Modifier.padding(top = 4.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally),
-            ) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(
+                book.title ?: stringResource(R.string.card_unknown_title),
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+            )
+            book.subtitle
+                ?.takeIf { it.isNotBlank() }
+                ?.let {
+                    Text(
+                        it,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 book.authors.forEach { author ->
                     Text(
                         author.name,
-                        style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier
-                            .clickable(onClickLabel = stringResource(R.string.books_by, author.name)) { onAuthorClick(author.id, author.name) }
-                            .padding(vertical = 4.dp),
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier =
+                            Modifier.clickable { onAuthorClick(author.id, author.name) }
+                                .padding(vertical = 4.dp),
                     )
                 }
             }
-        }
-        val narrators = book.audioMetadata?.narrators.orEmpty()
-        if (narrators.isNotEmpty()) {
+            book.rating?.let { StarRating(value = it, onChange = null) }
             Text(
-                stringResource(R.string.detail_narrated_by, narrators.joinToString(", ") { it.name }),
+                stringResource(R.string.detail_in_library, book.libraryName),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                listOfNotNull(book.publishedYear?.toString(), book.publisher).joinToString(" · "),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.padding(top = 2.dp),
             )
+            book.seriesName?.let { name ->
+                Chip(
+                    name + (book.seriesIndex?.let { " #${it.toInt()}" } ?: ""),
+                    modifier =
+                        Modifier.then(
+                            if (book.seriesId != null)
+                                Modifier.clickable { onSeriesClick(book.seriesId, name) }
+                            else Modifier
+                        ),
+                )
+            }
+            book.audioMetadata
+                ?.narrators
+                ?.takeIf { it.isNotEmpty() }
+                ?.let { narrators ->
+                    Text(
+                        stringResource(
+                            R.string.detail_narrated_by,
+                            narrators.joinToString(", ") { it.name },
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
         }
-        book.seriesName?.let { series ->
-            val seriesId = book.seriesId
-            Chip(
-                series + (book.seriesIndex?.let { " #${it.toInt()}" } ?: ""),
-                modifier = Modifier
-                    .padding(top = 10.dp)
-                    .then(if (seriesId != null) Modifier.clickable(onClickLabel = stringResource(R.string.books_in, series)) { onSeriesClick(seriesId, series) } else Modifier),
-            )
+    }
+}
+
+@Composable
+internal fun DetailReadingBar(
+    book: BookDetail,
+    progress: Map<Int, Double>,
+    onRead: (Int) -> Unit,
+    onReadPdf: (Int) -> Unit,
+    onReadComic: (Int) -> Unit,
+    onListen: (Int) -> Unit,
+) {
+    val target = BookFiles.readingTarget(book)
+    val file =
+        when (target) {
+            is BookFiles.ReadingTarget.Foliate -> target.file
+            is BookFiles.ReadingTarget.Pdf -> target.file
+            is BookFiles.ReadingTarget.Comic -> target.file
+            else -> null
+        }
+    val percentage = file?.let { progress[it.id] } ?: 0.0
+    Surface(tonalElevation = 2.dp) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            if (file != null)
+                Button(
+                    modifier = Modifier.weight(1f),
+                    onClick = {
+                        when (target) {
+                            is BookFiles.ReadingTarget.Pdf -> onReadPdf(book.id)
+                            is BookFiles.ReadingTarget.Comic -> onReadComic(book.id)
+                            else -> onRead(book.id)
+                        }
+                    },
+                ) {
+                    Text(
+                        if (percentage > 0)
+                            stringResource(R.string.detail_continue_progress, percentage.toInt())
+                        else stringResource(R.string.read)
+                    )
+                }
+            if (BookFiles.isAudiobook(book))
+                androidx.compose.material3.OutlinedButton(
+                    onClick = { onListen(book.id) },
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Icon(Icons.Filled.Headset, null)
+                    Text(stringResource(R.string.listen))
+                }
         }
     }
 }

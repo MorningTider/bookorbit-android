@@ -365,11 +365,7 @@ private fun QuickSettings(
             Modifier.weight(1f),
             onClick = onSpacing,
         )
-        ReadingPill(
-            stringResource(R.string.rs_more_settings) + " ›",
-            Modifier.weight(1f),
-            onClick = onMore,
-        )
+        ReadingPill(stringResource(R.string.rs_more) + " ›", Modifier.weight(1f), onClick = onMore)
     }
     TextButton(onClick = onAutoRead, modifier = Modifier.fillMaxWidth()) {
         Text(stringResource(R.string.rs_start_auto_read), fontSize = 15.sp)
@@ -387,7 +383,7 @@ private fun QuickRow(@StringRes label: Int, content: @Composable RowScope.() -> 
         Text(
             stringResource(label),
             Modifier.width(IntrinsicSize.Max).widthIn(min = 30.dp),
-            fontSize = 11.sp,
+            fontSize = 12.sp,
             maxLines = 1,
             softWrap = false,
         )

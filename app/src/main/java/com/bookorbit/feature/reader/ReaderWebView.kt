@@ -59,6 +59,10 @@ class ReaderController {
     @Volatile private var webView: WebView? = null
     private var presented = false
     private var initialLocation: ReaderEvent.Relocate? = null
+    internal var currentLocation: ReaderEvent.Relocate? = null
+        private set
+
+    private var pendingTurnLocation: ReaderEvent.Relocate? = null
 
     /** Set by the screen to receive parsed reader events. */
     var listener: ((ReaderEvent) -> Unit)? = null
@@ -81,6 +85,7 @@ class ReaderController {
             if (webView === view) {
                 when (event) {
                     is ReaderEvent.Relocate -> {
+                        currentLocation = event
                         atStart = event.atStart
                         atEnd = event.atEnd
                         curlHost?.relocated()
@@ -88,6 +93,10 @@ class ReaderController {
                     ReaderEvent.PageTurnRequested -> next()
                     ReaderEvent.PageTurnCompleted -> curlHost?.pageTurnCompleted()
                     else -> Unit
+                }
+                if (event is ReaderEvent.Relocate && curlHost?.isTurning == true) {
+                    pendingTurnLocation = event
+                    return@post
                 }
                 if (event is ReaderEvent.Relocate && !presented) {
                     initialLocation = event
@@ -165,6 +174,22 @@ class ReaderController {
         val host = curlHost
         if (pageCurlEnabled && host != null) host.turn(next) else turnPageDirect(next)
     }
+
+    internal fun finishPageTurn(committed: Boolean) {
+        val location = pendingTurnLocation
+        pendingTurnLocation = null
+        if (committed && location != null) listener?.invoke(location)
+    }
+
+    internal fun restorePage(location: ReaderEvent.Relocate?) =
+        command(
+            buildJsonObject {
+                    put("type", "restorePage")
+                    put("cfi", location?.cfi)
+                    put("fraction", location?.fraction ?: 0.0)
+                }
+                .toString()
+        )
 
     internal fun turnPageDirect(next: Boolean) =
         command(buildJsonObject { put("type", if (next) "next" else "prev") }.toString())
@@ -314,51 +339,79 @@ private class ReaderNativeWebView(context: Context, private val controller: Read
     WebView(context) {
     private var downX = 0f
     private var downY = 0f
-    private var downAt = 0L
-    private var draggingPage = false
+    private var trackingPage = false
+    private var moved = false
+    private var forward = true
+    private var velocity: android.view.VelocityTracker? = null
     private val slop = android.view.ViewConfiguration.get(context).scaledTouchSlop
 
     override fun onTouchEvent(event: android.view.MotionEvent): Boolean {
         if (!controller.pageCurlEnabled) return super.onTouchEvent(event)
+        val host = controller.curlHost ?: return super.onTouchEvent(event)
         when (event.actionMasked) {
             android.view.MotionEvent.ACTION_DOWN -> {
                 downX = event.x
                 downY = event.y
-                downAt = event.eventTime
-                draggingPage = false
+                moved = false
+                velocity?.recycle()
+                velocity = android.view.VelocityTracker.obtain().also { it.addMovement(event) }
+                forward = event.x > width * .5f
+                trackingPage =
+                    (event.x < width * .3f || event.x > width * .7f) && host.beginDrag(forward)
+                if (trackingPage) {
+                    host.dragTo(if (forward) 1f - event.x / width else event.x / width)
+                    return true
+                }
+            }
+            android.view.MotionEvent.ACTION_POINTER_DOWN,
+            android.view.MotionEvent.ACTION_CANCEL -> {
+                if (trackingPage) host.releaseDrag(false)
+                trackingPage = false
+                velocity?.recycle()
+                velocity = null
             }
             android.view.MotionEvent.ACTION_MOVE -> {
+                velocity?.addMovement(event)
+                val horizontal = kotlin.math.abs(event.x - downX)
                 if (
-                    !draggingPage &&
+                    !trackingPage &&
                         event.pointerCount == 1 &&
-                        event.eventTime - downAt < 350 &&
-                        kotlin.math.abs(event.x - downX) > slop * 2 &&
-                        kotlin.math.abs(event.x - downX) > kotlin.math.abs(event.y - downY) * 1.5f
+                        horizontal > slop * 2 &&
+                        horizontal > kotlin.math.abs(event.y - downY) * 1.5f &&
+                        event.eventTime - event.downTime <
+                            android.view.ViewConfiguration.getLongPressTimeout()
                 ) {
-                    draggingPage = true
-                    android.view.MotionEvent.obtain(event).also {
-                        it.action = android.view.MotionEvent.ACTION_CANCEL
-                        super.onTouchEvent(it)
-                        it.recycle()
-                    }
+                    forward = event.x < downX
+                    trackingPage = host.beginDrag(forward)
+                    if (trackingPage)
+                        android.view.MotionEvent.obtain(event).also {
+                            it.action = android.view.MotionEvent.ACTION_CANCEL
+                            super.onTouchEvent(it)
+                            it.recycle()
+                        }
                 }
-                if (
-                    draggingPage ||
-                        (event.pointerCount == 1 &&
-                            event.eventTime - downAt <
-                                android.view.ViewConfiguration.getLongPressTimeout())
-                )
+                if (trackingPage) {
+                    moved = moved || horizontal > slop
+                    host.dragTo(if (forward) 1f - event.x / width else event.x / width)
                     return true
+                }
             }
-            android.view.MotionEvent.ACTION_UP ->
-                if (draggingPage) {
-                    draggingPage = false
-                    if (kotlin.math.abs(event.x - downX) > width * .12f) {
-                        if (event.x < downX) controller.next() else controller.prev()
-                    }
+            android.view.MotionEvent.ACTION_UP -> {
+                velocity?.addMovement(event)
+                velocity?.computeCurrentVelocity(1000)
+                val speed = (velocity?.xVelocity ?: 0f) * if (forward) -1 else 1
+                velocity?.recycle()
+                velocity = null
+                if (trackingPage) {
+                    trackingPage = false
+                    host.releaseDrag(
+                        !moved ||
+                            host.dragProgress > .22f ||
+                            speed > 600 * resources.displayMetrics.density
+                    )
                     return true
                 }
-            android.view.MotionEvent.ACTION_CANCEL -> draggingPage = false
+            }
         }
         return super.onTouchEvent(event)
     }

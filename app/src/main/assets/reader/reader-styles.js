@@ -23,7 +23,7 @@ export function fontFaceCSS(faces) {
         min,
         Math.min(1000, Number(face.weightMax ?? face.weight) || min),
       );
-      return `@font-face { font-family: "${face.family}"; src: url("https://appassets.androidplatform.net/reader-fonts/${face.fileName}") format("${formats[face.format]}"); font-weight: ${min} ${max}; font-style: ${face.style === "italic" ? "italic" : "normal"}; font-display: swap; }`;
+      return `@font-face { font-family: "${face.family}"; src: url("https://appassets.androidplatform.net/reader-fonts/${face.fileName}") format("${formats[face.format]}"); font-weight: ${min} ${max}; font-style: ${face.style === "italic" ? "italic" : "normal"}; font-display: block; }`;
     })
     .join("\n");
 }

@@ -1,6 +1,6 @@
 ## 中文定制版
 
-当前自用候选为 `0.7.1-custom.4`，修复卷页前正文位移和重新进入时的字体切换闪现。按阅读参考图调整紧凑设置与目录，支持覆盖翻页、纸纹/柔光背景和详情/金句/笔记页签。模拟器回归通过，手机流畅度与覆盖安装待验收。
+当前自用候选为 `0.7.1-custom.5`。章节显示前等待已选字体，仿真支持按住、跟手拖动、松手提交与拖回取消。接入跨端阅读位置检查和接续提示，目录封面/书名可打开书籍详情。首页补充搜索与快捷入口，详情使用紧凑概览、固定继续阅读按钮和服务端阅读记录。自动检查与模拟器回归通过，手机覆盖安装、中文字体和实际服务器联调待验收。
 
 本 fork 的阅读器定制代码维护在 `custom/bookorbit-android-v0.7.1`。需求和升级记录见 [定制需求](docs/CUSTOMIZATION_REQUIREMENTS.md)、[功能状态](docs/CUSTOM_FEATURE_MATRIX.md)、[剩余事项](docs/CUSTOMIZATION_REMAINING.md)、[补丁索引](docs/CUSTOM_PATCH_INDEX.md) 和 [上游同步流程](docs/CUSTOM_BRANCH_WORKFLOW.md)。
 

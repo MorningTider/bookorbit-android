@@ -12,7 +12,7 @@
  * asset served by WebViewAssetLoader.
  */
 import './foliate/view.js';
-import { settleReaderFonts } from './reader-loading.js';
+import { settleReaderFonts, prepareSectionFonts } from './reader-loading.js';
 import { fontFaceCSS, typographyCSS, paperBackground } from './reader-styles.js';
 import { applyPageAnimation, applySidePadding, createAutoReader } from './reader-navigation.js';
 
@@ -149,6 +149,7 @@ function applyStyles(settings) {
   view.style.backgroundImage = background.image;
   const r = view.renderer;
   if (!r) return;
+  r.prepareDocument = (doc) => prepareSectionFonts(doc, currentSettings, fontFaces);
   const attr = (name, value) => {
     if (r.getAttribute(name) !== value) r.setAttribute(name, value);
   };
@@ -617,6 +618,16 @@ window.__readerCommand = (json) => {
       break;
     case 'goToFraction':
       if (typeof view.goToFraction === 'function') view.goToFraction(cmd.value);
+      break;
+    case 'restorePage':
+      void (async () => {
+        try {
+          if (cmd.cfi) await view.goTo(cmd.cfi);
+          else await view.goToFraction(cmd.fraction ?? 0);
+        } finally {
+          post({ type: 'pageTurnCompleted' });
+        }
+      })();
       break;
     case 'previousChapter':
       view.renderer?.prevSection?.();

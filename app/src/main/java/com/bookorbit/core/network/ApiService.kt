@@ -192,7 +192,22 @@ interface ApiService {
 
     @Streaming
     @GET("{collection}/{fontId}/file")
-    suspend fun serveReaderFont(@Path("collection") collection: String, @Path("fontId") fontId: Int): ResponseBody
+    suspend fun serveReaderFont(
+        @Path("collection") collection: String,
+        @Path("fontId") fontId: Int,
+    ): ResponseBody
+
+    @GET("books/{bookId}/progress")
+    suspend fun getBookFileProgress(
+        @Path("bookId") bookId: Int
+    ): List<com.bookorbit.core.model.BookFileProgress>
+
+    @GET("books/{bookId}/sessions")
+    suspend fun getBookReadingLog(
+        @Path("bookId") bookId: Int,
+        @Query("page") page: Int,
+        @Query("pageSize") pageSize: Int = 20,
+    ): com.bookorbit.core.model.BookReadingLog
 
     @POST("books/files/{fileId}/sessions")
     suspend fun saveReadingSession(

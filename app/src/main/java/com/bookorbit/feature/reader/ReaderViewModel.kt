@@ -60,6 +60,7 @@ class ReaderViewModel @Inject constructor(
         val loadingFile: Boolean = true,
         val error: UiText? = null,
         val title: String? = null,
+        val syncedPosition: InitialProgress? = null,
         val author: String = "",
         val description: String = "",
         val resolved: ResolvedOpen? = null,
@@ -101,6 +102,7 @@ class ReaderViewModel @Inject constructor(
     private var settingsSaveJob: Job? = null
     private var fontLoadJob: Job? = null
     private var lastSaved = 0L
+    private var checkingProgress = false
     private var pending: Pair<String?, Double>? = null
 
     /** Where the reader is now, so a bookmark can be dropped there. */
@@ -155,9 +157,50 @@ class ReaderViewModel @Inject constructor(
                     )
                 }
             } catch (e: Exception) {
-                _ui.update { it.copy(loadingFile = false, error = e.message?.let { m -> UiText.raw(m) } ?: UiText.of(R.string.reader_err_open_book)) }
+                _ui.update {
+                    it.copy(
+                        loadingFile = false,
+                        error =
+                            e.message?.let { m -> UiText.raw(m) }
+                                ?: UiText.of(R.string.reader_err_open_book),
+                    )
+                }
             }
         }
+    }
+
+    fun checkSyncedProgress() {
+        val fileId = _ui.value.resolved?.fileId ?: return
+        if (!_ui.value.loaded || checkingProgress || _ui.value.syncedPosition != null) return
+        flush()
+        checkingProgress = true
+        viewModelScope.launch {
+            try {
+                val position =
+                    progress.newerRemote(
+                        fileId,
+                        InitialProgress(currentCfi, _ui.value.percentage / 100.0),
+                    )
+                if (
+                    position != null &&
+                        (position.cfi != currentCfi ||
+                            position.cfi == null &&
+                                position.fraction != _ui.value.percentage / 100.0)
+                ) {
+                    _ui.update { it.copy(syncedPosition = position) }
+                }
+            } finally {
+                checkingProgress = false
+            }
+        }
+    }
+
+    fun dismissSyncedProgress() = _ui.update { it.copy(syncedPosition = null) }
+
+    fun keepCurrentProgress() {
+        dismissSyncedProgress()
+        report(currentCfi, _ui.value.percentage.toDouble())
+        flush()
     }
 
     fun onLoaded(toc: List<TocItem>, title: String?) {

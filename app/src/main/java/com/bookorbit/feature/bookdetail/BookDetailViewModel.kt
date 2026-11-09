@@ -44,6 +44,9 @@ class BookDetailViewModel @Inject constructor(
         val highlights: List<BookAnnotation> = emptyList(),
         /** File id to reading position (0-100), for the per-format progress chips. */
         val fileProgress: Map<Int, Double> = emptyMap(),
+        val readingLog: com.bookorbit.core.model.BookReadingLog? = null,
+        val logLoading: Boolean = false,
+        val logError: Boolean = false,
         val statusUpdating: Boolean = false,
         val ratingUpdating: Boolean = false,
     )
@@ -90,12 +93,47 @@ class BookDetailViewModel @Inject constructor(
                 val highlights = runCatching { repo.highlights(bookId) }.getOrDefault(emptyList())
                 _ui.update { it.copy(highlights = highlights) }
             }
-            launch {
-                val progress = book.files
-                    .filter { BookFiles.isOpenableEbook(it.format) }
-                    .mapNotNull { f -> repo.fileProgress(f.id)?.takeIf { it > 0 }?.let { f.id to it } }
-                    .toMap()
-                _ui.update { it.copy(fileProgress = progress) }
+            refreshReadingState()
+        }
+    }
+
+    fun refreshReadingState() {
+        viewModelScope.launch {
+            val progress =
+                runCatching { repo.bookProgress(bookId) }.getOrDefault(_ui.value.fileProgress)
+            _ui.update { it.copy(fileProgress = progress) }
+        }
+        loadReadingLog()
+    }
+
+    fun loadReadingLog(append: Boolean = false) {
+        if (_ui.value.logLoading) return
+        val current = _ui.value.readingLog
+        val page = if (append && current != null) current.page + 1 else 1
+        _ui.update { it.copy(logLoading = true, logError = false) }
+        viewModelScope.launch {
+            try {
+                val result = repo.readingLog(bookId, page)
+                _ui.update {
+                    it.copy(
+                        readingLog =
+                            result.copy(
+                                items =
+                                    if (append)
+                                        (current?.items.orEmpty() + result.items).distinctBy { row
+                                            ->
+                                            row.id
+                                        }
+                                    else result.items
+                            )
+                    )
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                _ui.update { it.copy(logError = true) }
+            } finally {
+                _ui.update { it.copy(logLoading = false) }
             }
         }
     }

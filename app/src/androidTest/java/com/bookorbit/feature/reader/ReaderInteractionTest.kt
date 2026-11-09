@@ -46,6 +46,7 @@ class ReaderInteractionTest {
     private var showContents by mutableStateOf(false)
     private var automatic by mutableStateOf(false)
     private var selectedHref: String? = null
+    private var openedDetails = false
     private val fonts =
         listOf(
             ReaderFontFamily(
@@ -112,6 +113,7 @@ class ReaderInteractionTest {
                             settings = settings,
                             bookTitle = "阅读设置交互验收",
                             currentHref = "chapter-42",
+                            onBookDetails = { openedDetails = true },
                             author = "验收作者",
                             description = "<p>这是图书详情的验收简介。</p>",
                             annotations =
@@ -197,6 +199,17 @@ class ReaderInteractionTest {
         compose
             .onNodeWithText(compose.activity.getString(R.string.rs_search_chapters))
             .performTextInput("第99章")
+        screenshot("contents-search")
+        val chapterCount =
+            compose.onNodeWithText(compose.activity.getString(R.string.rs_chapter_count, 100))
+        val countTop = chapterCount.fetchSemanticsNode().boundsInWindow.top
+        compose.runOnIdle {
+            val insets =
+                androidx.core.view.ViewCompat.getRootWindowInsets(compose.activity.window.decorView)
+            val statusTop =
+                insets?.getInsets(androidx.core.view.WindowInsetsCompat.Type.statusBars())?.top ?: 0
+            assertTrue("Chapter controls stay below the system status bar", countTop >= statusTop)
+        }
         compose.onNodeWithText("第99章 山间清风").assertIsDisplayed().performClick()
         compose.runOnIdle {
             assertEquals("chapter-99", selectedHref)
@@ -256,6 +269,15 @@ class ReaderInteractionTest {
         screenshot("contents-notes")
         compose.onNodeWithText("验收金句").performClick()
         compose.runOnIdle { assertEquals("saved-cfi", selectedHref) }
+    }
+
+    @Test
+    fun contentsBookTitleOpensDetails() {
+        showSettings = false
+        showContents = true
+        show()
+        compose.onNodeWithText("阅读设置交互验收 ›").performClick()
+        compose.runOnIdle { assertTrue(openedDetails) }
     }
 
     private fun screenshot(name: String) {

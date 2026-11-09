@@ -26,26 +26,41 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sin
 
-/** Caches only the WebView body, outside the input path and independent of native controls. */
+/**
+ * A preview may turn the renderer, while its reported reading position stays unchanged until
+ * release.
+ */
 internal class ReaderPageCurlHost(
     context: Context,
     val reader: WebView,
     private val controller: ReaderController,
 ) : FrameLayout(context) {
+    private enum class Turn {
+        IDLE,
+        DRAGGING,
+        FINISHING,
+        RESTORING,
+    }
+
     private val page = ReaderPageCurlView(context)
     private val handler = Handler(Looper.getMainLooper())
     private var animator: ValueAnimator? = null
     private var generation = 0L
     private var ready = false
     private var destinationReady = false
-    private var busy = false
+    private var restoreRequested = false
+    private var state = Turn.IDLE
+    private var origin: ReaderEvent.Relocate? = null
     private var cached: Bitmap? = null
     internal val isTurning: Boolean
-        get() = busy
+        get() = state != Turn.IDLE
 
-    private val recover = Runnable { finish() }
+    internal val dragProgress: Float
+        get() = page.progress
+
+    private val recover = Runnable { finish(state != Turn.RESTORING) }
     private val warm = Runnable {
-        if (ready && !busy && controller.pageCurlEnabled && isAttachedToWindow) {
+        if (ready && !isTurning && controller.pageCurlEnabled && isAttachedToWindow) {
             cached?.recycle()
             cached = captureBody()
             cached?.prepareToDraw()
@@ -85,18 +100,6 @@ internal class ReaderPageCurlHost(
         )
     }
 
-    fun invalidatePage() {
-        if (busy) finish()
-        cached?.recycle()
-        cached = null
-        scheduleWarmup()
-    }
-
-    private fun scheduleWarmup() {
-        handler.removeCallbacks(warm)
-        if (ready && controller.pageCurlEnabled) handler.postDelayed(warm, 100)
-    }
-
     private fun captureBody(): Bitmap? {
         if (reader.width == 0 || reader.height == 0) return null
         val scale = min(1f, 1280f / max(reader.width, reader.height))
@@ -125,41 +128,81 @@ internal class ReaderPageCurlHost(
         }
     }
 
-    fun turn(next: Boolean) {
-        if (busy || !ready || !isAttachedToWindow) return
-        if (if (next) controller.atEnd else controller.atStart) return
+    private fun scheduleWarmup() {
         handler.removeCallbacks(warm)
-        val snapshot = cached
-        cached = null
-        busy = true
-        destinationReady = false
-        generation++
-        if (snapshot == null || !ValueAnimator.areAnimatorsEnabled()) {
-            snapshot?.recycle()
-            controller.turnPageDirect(next)
-            handler.postDelayed(recover, 2_000)
-            return
-        }
-        page.setPage(snapshot, next, controller.pageColor, controller.pageCoverEnabled)
-        // The overlay is already in place when the engine moves. Native chrome is never captured.
-        animate(0f, 1f, 320)
-        controller.turnPageDirect(next)
-        handler.postDelayed(recover, 2_000)
+        if (ready && controller.pageCurlEnabled) handler.postDelayed(warm, 80)
     }
 
-    private fun animate(from: Float, to: Float, durationMs: Long) {
+    fun invalidatePage() {
+        if (isTurning) return
+        cached?.recycle()
+        cached = null
+        scheduleWarmup()
+    }
+
+    private fun begin(next: Boolean, interactive: Boolean): Boolean {
+        if (
+            isTurning ||
+                !ready ||
+                !isAttachedToWindow ||
+                (if (next) controller.atEnd else controller.atStart)
+        )
+            return false
+        val snapshot = cached
+        if (interactive && snapshot == null) return false
+        cached = null
+        handler.removeCallbacks(warm)
+        origin = controller.currentLocation
+        generation++
+        destinationReady = false
+        restoreRequested = false
+        state = if (interactive) Turn.DRAGGING else Turn.FINISHING
+        if (snapshot != null)
+            page.setPage(snapshot, next, controller.pageColor, controller.pageCoverEnabled)
+        if (interactive) page.progress = .025f else if (snapshot != null) animate(1f)
+        controller.turnPageDirect(next)
+        if (!interactive) handler.postDelayed(recover, 5_000)
+        return true
+    }
+
+    fun turn(next: Boolean) {
+        begin(next, false)
+    }
+
+    fun beginDrag(next: Boolean): Boolean = begin(next, true)
+
+    fun dragTo(distance: Float) {
+        if (state == Turn.DRAGGING) page.progress = distance.coerceIn(0f, .92f)
+    }
+
+    fun releaseDrag(commit: Boolean) {
+        if (state != Turn.DRAGGING) return
+        state = if (commit) Turn.FINISHING else Turn.RESTORING
+        animate(if (commit) 1f else 0f)
+        handler.postDelayed(recover, 5_000)
+    }
+
+    private fun animate(target: Float) {
+        animator?.removeAllListeners()
+        animator?.cancel()
         animator =
-            ValueAnimator.ofFloat(from, to).apply {
-                duration = durationMs
+            ValueAnimator.ofFloat(page.progress, target).apply {
+                duration =
+                    if (ValueAnimator.areAnimatorsEnabled())
+                        (260 * kotlin.math.abs(target - page.progress)).toLong().coerceAtLeast(80)
+                    else 0
                 interpolator = FastOutSlowInInterpolator()
                 addUpdateListener {
                     val value = it.animatedValue as Float
-                    page.progress = if (destinationReady) value else min(value, .92f)
+                    page.progress =
+                        if (state == Turn.FINISHING && !destinationReady) min(value, .92f)
+                        else value
                 }
                 addListener(
                     object : AnimatorListenerAdapter() {
                         override fun onAnimationEnd(animation: Animator) {
-                            if (destinationReady) finish()
+                            if (state == Turn.RESTORING && destinationReady) restore()
+                            else if (state == Turn.FINISHING && destinationReady) finish(true)
                         }
                     }
                 )
@@ -168,38 +211,57 @@ internal class ReaderPageCurlHost(
     }
 
     fun relocated() {
-        if (!busy) invalidatePage()
+        if (!isTurning) invalidatePage()
     }
 
     fun pageTurnCompleted() {
-        if (!busy) return
+        if (!isTurning) return
         val token = generation
         reader.postVisualStateCallback(
             token,
             object : WebView.VisualStateCallback() {
                 override fun onComplete(requestId: Long) {
-                    if (requestId != generation || !busy) return
+                    if (requestId != generation || !isTurning) return
                     destinationReady = true
-                    if (page.visibility != View.VISIBLE) finish()
-                    else if (animator?.isRunning != true) animate(page.progress, 1f, 80)
+                    when (state) {
+                        Turn.RESTORING ->
+                            if (restoreRequested) finish(false)
+                            else if (animator?.isRunning != true) restore()
+                        Turn.FINISHING ->
+                            if (page.visibility != View.VISIBLE) finish(true)
+                            else if (animator?.isRunning != true) animate(1f)
+                        else -> Unit
+                    }
                 }
             },
         )
     }
 
-    private fun finish() {
+    private fun restore() {
+        if (restoreRequested) return
+        restoreRequested = true
+        controller.restorePage(origin)
+    }
+
+    private fun finish(committed: Boolean) {
         generation++
-        busy = false
+        state = Turn.IDLE
         handler.removeCallbacks(recover)
         animator?.removeAllListeners()
         animator?.cancel()
         animator = null
         page.release()
+        controller.finishPageTurn(committed)
         scheduleWarmup()
     }
 
     fun clear() {
-        finish()
+        if (state == Turn.DRAGGING && isAttachedToWindow) {
+            releaseDrag(false)
+            return
+        }
+        if (state == Turn.RESTORING && isAttachedToWindow) return
+        finish(state == Turn.FINISHING)
         handler.removeCallbacks(warm)
         cached?.recycle()
         cached = null
@@ -215,7 +277,10 @@ internal class ReaderPageCurlHost(
 
     override fun onDetachedFromWindow() {
         ready = false
-        clear()
+        finish(false)
+        handler.removeCallbacks(warm)
+        cached?.recycle()
+        cached = null
         super.onDetachedFromWindow()
     }
 }

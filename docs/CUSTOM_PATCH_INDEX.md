@@ -37,3 +37,13 @@
 - `pageTurnCompleted` 必须在 `view.next/prev` 的 Promise 完成后发送。页码变化发生时引擎可能仍锁定，不能据此提前接收下一次导航。
 - `ReaderPanel` 共用支持系统边距的底部面板。窄屏和大字号回归需检查底部导航实际可见。
 - `ReaderEngineTest` 在旧版复现首次字体未就绪，并在新版检查首次打开、重新进入、非零进度恢复、加载完成前不提交临时位置、正文可见绘制、卷页、覆盖翻页、小幅拖动与帧时间。`ReaderInteractionTest` 检查背景及各内容页签。
+
+## BA-C19 至 BA-C23
+
+- `foliate/paginator.js` 的章节 `View.load` 等待异步 `afterLoad`，`bridge.js` 设置 `prepareDocument`，`reader-loading.js` 等待该章节所选字重和独立 FontFaceSet。升级 Foliate 时必须保留此等待顺序。`font-display:block` 配合显示门控。
+- `ReaderPageCurlHost` 维护拖动、完成和恢复状态，`ReaderNativeWebView` 接收触摸与速度。预览页位置在 `ReaderController` 内缓冲，取消通过 `restorePage` 恢复 CFI 后结束，提交才转交进度。不要用页码变化代替引擎导航完成。
+- `ReaderProgressRepository` 串行本地检查点和远端合并，使用文本时间戳、保留回退位置，已确认记录按实际位置比较。`ReaderViewModel/ReaderScreen` 在恢复及活动轮询时检查当前屏幕位置，接续提示支持保留当前页并保存。
+- `ReaderTocSheet` 的封面和书名通过 `ReaderDestination/AuthenticatedApp/MainShell` 回到实际书籍详情，使用 SavedStateHandle 传递目标书籍。
+- `HomeShortcuts` 复用现有搜索、书库、下载、笔记与统计。`BookDetailScreen` 的紧凑概览和固定按钮保留原有文件格式选择逻辑。
+- `BookReadingLog`、`ApiService`、`BookDetailRepository/ViewModel` 和 `ReadingLogPanel` 对齐服务端书籍进度及阅读会话端点。每页20条，保留失败提示和重试。
+- `ReaderProgressSyncTest` 与 `ReaderSyncHttpTest` 覆盖跨端位置、离线、回退和实际HTTP序列化。`ReaderEngineTest` 验证章节字体及手持卷页，`BookExperienceTest` 验证首页与详情组件。

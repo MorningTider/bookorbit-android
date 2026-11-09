@@ -2,7 +2,9 @@ package com.bookorbit.app
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.dropUnlessResumed
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -36,11 +38,18 @@ fun AuthenticatedApp(user: AuthUser, onSignOut: () -> Unit) {
     LaunchedEffect(Unit) { playerVm.restoreLastBook() }
 
     NavHost(navController = navController, startDestination = AppRoutes.MAIN) {
-        composable(AppRoutes.MAIN) {
-            // Book detail lives INSIDE the shell (so the bottom bar + mini-player persist); only the
+        composable(AppRoutes.MAIN) { entry ->
+            val requestedBook by
+                entry.savedStateHandle
+                    .getStateFlow<Int?>("requestedBook", null)
+                    .collectAsStateWithLifecycle()
+            // Book detail lives INSIDE the shell (so the bottom bar + mini-player persist); only
+            // the
             // immersive reader/player are full-screen app-level destinations.
             MainShell(
                 user = user,
+                requestedBookId = requestedBook,
+                onBookRequestConsumed = { entry.savedStateHandle["requestedBook"] = null },
                 onSignOut = onSignOut,
                 onOpenReader = { id -> navController.navigate(AppRoutes.reader(id)) },
                 onOpenPdf = { id -> navController.navigate(AppRoutes.pdf(id)) },
@@ -56,7 +65,20 @@ fun AuthenticatedApp(user: AuthUser, onSignOut: () -> Unit) {
             route = AppRoutes.READER,
             arguments = listOf(navArgument("id") { type = NavType.IntType }),
         ) {
-            ReaderDestination(ReaderKind.EBOOK, onBack = dropUnlessResumed { navController.popBackStack() })
+            ReaderDestination(
+                ReaderKind.EBOOK,
+                onBack = dropUnlessResumed { navController.popBackStack() },
+                onBookDetails =
+                    dropUnlessResumed {
+                        val id = navController.currentBackStackEntry?.arguments?.getInt("id")
+                        if (id != null) {
+                            navController
+                                .getBackStackEntry(AppRoutes.MAIN)
+                                .savedStateHandle["requestedBook"] = id
+                            navController.popBackStack(AppRoutes.MAIN, false)
+                        }
+                    },
+            )
         }
         composable(
             route = AppRoutes.PDF,

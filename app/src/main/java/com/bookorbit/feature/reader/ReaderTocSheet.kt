@@ -71,6 +71,7 @@ fun ReaderTocSheet(
     author: String = "",
     description: String = "",
     annotations: List<BookAnnotation> = emptyList(),
+    onBookDetails: (() -> Unit)? = null,
 ) {
     val flat = remember(toc) { readerContents(toc) }
     var query by rememberSaveable { mutableStateOf("") }
@@ -85,7 +86,7 @@ fun ReaderTocSheet(
     val currentIndex = matching.indexOfFirst { it.href == currentHref }.coerceAtLeast(0)
     val listState = rememberLazyListState(initialFirstVisibleItemIndex = currentIndex)
     val scope = rememberCoroutineScope()
-    LaunchedEffect(reversed) { listState.scrollToItem(currentIndex) }
+    LaunchedEffect(query, reversed) { listState.scrollToItem(currentIndex) }
     val height = LocalConfiguration.current.screenHeightDp.dp * .84f
     ReaderPanel(settings, onDismiss, dim = .35f) {
         Column(Modifier.fillMaxWidth().height(height)) {
@@ -96,7 +97,13 @@ fun ReaderTocSheet(
                     horizontalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
                     Box(
-                        Modifier.width(46.dp)
+                        Modifier.clickable(
+                                enabled = onBookDetails != null,
+                                onClickLabel = stringResource(R.string.rs_open_book_details),
+                            ) {
+                                onBookDetails?.invoke()
+                            }
+                            .width(46.dp)
                             .height(66.dp)
                             .clip(RoundedCornerShape(5.dp))
                             .background(MaterialTheme.colorScheme.onSurface.copy(alpha = .06f)),
@@ -111,9 +118,17 @@ fun ReaderTocSheet(
                             )
                         } else Icon(Icons.AutoMirrored.Filled.MenuBook, null)
                     }
-                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Column(
+                        Modifier.weight(1f).clickable(
+                            enabled = onBookDetails != null,
+                            onClickLabel = stringResource(R.string.rs_open_book_details),
+                        ) {
+                            onBookDetails?.invoke()
+                        },
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
                         Text(
-                            bookTitle,
+                            bookTitle + if (onBookDetails != null) " ›" else "",
                             fontSize = 19.sp,
                             fontWeight = FontWeight.Bold,
                             maxLines = 2,

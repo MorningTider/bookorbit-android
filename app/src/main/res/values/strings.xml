@@ -517,4 +517,19 @@
     <string name="rs_turn_cover">Cover</string>
     <string name="rs_other">Other</string>
     <string name="rs_quotes">Highlights</string>
+    <string name="rs_cloud_progress">Reading progress updated</string>
+    <string name="rs_cloud_progress_message">Another client saved progress at %1$d%%. Continue from that position?</string>
+    <string name="rs_cloud_jump">Continue from synced position</string>
+    <string name="rs_cloud_keep">Keep current position</string>
+    <string name="rs_open_book_details">Open book details</string>
+    <string name="home_search_books">Search books, authors and series</string>
+    <string name="detail_tab_reading_log">Reading log</string>
+    <string name="detail_log_error">Reading records could not be loaded</string>
+    <string name="detail_log_empty">Your reading sessions will appear here.</string>
+    <string name="detail_log_summary">Sessions %1$d · Total %2$d min</string>
+    <string name="detail_continue_progress">Continue reading · %1$d%%</string>
+    <string name="detail_in_library">In %1$s</string>
+    <string name="log_seconds">Duration %1$d s</string>
+    <string name="log_source_web">Web reader</string>
+    <string name="log_source_manual">Manual record</string>
 </resources>

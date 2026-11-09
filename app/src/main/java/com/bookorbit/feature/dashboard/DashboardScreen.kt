@@ -1,8 +1,5 @@
 package com.bookorbit.feature.dashboard
 
-import androidx.compose.ui.res.pluralStringResource
-import androidx.compose.ui.res.stringResource
-import com.bookorbit.R
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -39,12 +36,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
+import com.bookorbit.R
 import com.bookorbit.core.model.BookCard
 import com.bookorbit.core.model.ReadingGoalWidget
 import com.bookorbit.core.model.ReadingStreakWidget
@@ -59,10 +59,18 @@ fun DashboardScreen(
     userName: String,
     onOpenProfile: () -> Unit,
     onBookClick: (Int) -> Unit,
+    onShortcut: (HomeShortcut) -> Unit = {},
     vm: DashboardViewModel = hiltViewModel(),
 ) {
     val ui by vm.ui.collectAsStateWithLifecycle()
-    val isEmpty = !ui.loading && ui.continueReading.isEmpty() && ui.continueListening.isEmpty() && ui.recentlyAdded.isEmpty()
+    androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+        if (!ui.loading) vm.refresh()
+    }
+    val isEmpty =
+        !ui.loading &&
+            ui.continueReading.isEmpty() &&
+            ui.continueListening.isEmpty() &&
+            ui.recentlyAdded.isEmpty()
 
     PullToRefreshBox(
         isRefreshing = ui.loading,
@@ -71,20 +79,31 @@ fun DashboardScreen(
     ) {
         Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
             HomeHeader(userName = userName, onOpenProfile = onOpenProfile)
+            HomeShortcuts(onShortcut)
 
             when {
-                ui.error -> Box(Modifier.fillMaxWidth().padding(vertical = 64.dp), Alignment.Center) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(stringResource(R.string.couldn_t_load_your_dashboard), color = MaterialTheme.colorScheme.error)
-                        Button(onClick = { vm.refresh() }, modifier = Modifier.padding(top = 12.dp)) { Text(stringResource(R.string.retry)) }
+                ui.error ->
+                    Box(Modifier.fillMaxWidth().padding(vertical = 64.dp), Alignment.Center) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(
+                                stringResource(R.string.couldn_t_load_your_dashboard),
+                                color = MaterialTheme.colorScheme.error,
+                            )
+                            Button(
+                                onClick = { vm.refresh() },
+                                modifier = Modifier.padding(top = 12.dp),
+                            ) {
+                                Text(stringResource(R.string.retry))
+                            }
+                        }
                     }
-                }
-                isEmpty -> Box(Modifier.fillMaxWidth().padding(vertical = 64.dp), Alignment.Center) {
-                    Text(
-                        stringResource(R.string.nothing_here_yet_add_books),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+                isEmpty ->
+                    Box(Modifier.fillMaxWidth().padding(vertical = 64.dp), Alignment.Center) {
+                        Text(
+                            stringResource(R.string.nothing_here_yet_add_books),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 else -> {
                     StatsStrip(streak = ui.streak, goal = ui.goal)
 
@@ -94,16 +113,39 @@ fun DashboardScreen(
                     if (hero != null) {
                         ContinueCard(
                             book = hero,
-                            label = stringResource(if (heroFromReading != null) R.string.home_continue_reading else R.string.continue_listening),
+                            label =
+                                stringResource(
+                                    if (heroFromReading != null) R.string.home_continue_reading
+                                    else R.string.continue_listening
+                                ),
                             onClick = { onBookClick(hero.id) },
                         )
                     }
 
-                    val moreReading = if (heroFromReading != null) ui.continueReading.drop(1) else ui.continueReading
-                    val moreListening = if (heroFromReading != null) ui.continueListening else ui.continueListening.drop(1)
-                    if (moreReading.isNotEmpty()) HorizontalBookScroller(stringResource(R.string.up_next_to_read), moreReading, onBookClick)
-                    if (moreListening.isNotEmpty()) HorizontalBookScroller(stringResource(R.string.continue_listening), moreListening, onBookClick)
-                    if (ui.recentlyAdded.isNotEmpty()) HorizontalBookScroller(stringResource(R.string.recently_added), ui.recentlyAdded, onBookClick)
+                    val moreReading =
+                        if (heroFromReading != null) ui.continueReading.drop(1)
+                        else ui.continueReading
+                    val moreListening =
+                        if (heroFromReading != null) ui.continueListening
+                        else ui.continueListening.drop(1)
+                    if (moreReading.isNotEmpty())
+                        HorizontalBookScroller(
+                            stringResource(R.string.up_next_to_read),
+                            moreReading,
+                            onBookClick,
+                        )
+                    if (moreListening.isNotEmpty())
+                        HorizontalBookScroller(
+                            stringResource(R.string.continue_listening),
+                            moreListening,
+                            onBookClick,
+                        )
+                    if (ui.recentlyAdded.isNotEmpty())
+                        HorizontalBookScroller(
+                            stringResource(R.string.recently_added),
+                            ui.recentlyAdded,
+                            onBookClick,
+                        )
                 }
             }
             Spacer(Modifier.height(24.dp))
@@ -114,22 +156,35 @@ fun DashboardScreen(
 @Composable
 private fun HomeHeader(userName: String, onOpenProfile: () -> Unit) {
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .statusBarsPadding()
-            .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 4.dp),
+        modifier =
+            Modifier.fillMaxWidth()
+                .statusBarsPadding()
+                .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
-            Text(greeting(), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(userName, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(
+                greeting(),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                userName,
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
         Box(
-            modifier = Modifier
-                .size(36.dp)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.primaryContainer)
-                .clickable(onClickLabel = stringResource(R.string.open_profile), onClick = onOpenProfile),
+            modifier =
+                Modifier.size(36.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primaryContainer)
+                    .clickable(
+                        onClickLabel = stringResource(R.string.open_profile),
+                        onClick = onOpenProfile,
+                    ),
             contentAlignment = Alignment.Center,
         ) {
             Text(
@@ -142,13 +197,14 @@ private fun HomeHeader(userName: String, onOpenProfile: () -> Unit) {
 }
 
 @Composable
-private fun greeting(): String = stringResource(
-    when (LocalTime.now().hour) {
-        in 5..11 -> R.string.home_good_morning
-        in 12..17 -> R.string.home_good_afternoon
-        else -> R.string.home_good_evening
-    },
-)
+private fun greeting(): String =
+    stringResource(
+        when (LocalTime.now().hour) {
+            in 5..11 -> R.string.home_good_morning
+            in 12..17 -> R.string.home_good_afternoon
+            else -> R.string.home_good_evening
+        }
+    )
 
 /** Streak and yearly goal side by side; each hides itself if the server doesn't provide it. */
 @Composable
@@ -182,25 +238,41 @@ private fun StreakCard(streak: ReadingStreakWidget, modifier: Modifier) {
             Icon(
                 Icons.Filled.LocalFireDepartment,
                 contentDescription = null,
-                tint = if (streak.currentStreak > 0) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.outline,
+                tint =
+                    if (streak.currentStreak > 0) MaterialTheme.colorScheme.tertiary
+                    else MaterialTheme.colorScheme.outline,
                 modifier = Modifier.size(18.dp),
             )
-            Text(stringResource(R.string.streak), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 6.dp))
+            Text(
+                stringResource(R.string.streak),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 6.dp),
+            )
         }
         Text(
-            pluralStringResource(R.plurals.home_streak_days, streak.currentStreak, streak.currentStreak),
+            pluralStringResource(
+                R.plurals.home_streak_days,
+                streak.currentStreak,
+                streak.currentStreak,
+            ),
             style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.SemiBold,
             modifier = Modifier.padding(top = 4.dp),
         )
         if (streak.lastSevenDays.isNotEmpty()) {
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.padding(top = 8.dp)) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                modifier = Modifier.padding(top = 8.dp),
+            ) {
                 streak.lastSevenDays.takeLast(7).forEach { active ->
                     Box(
-                        Modifier
-                            .size(8.dp)
+                        Modifier.size(8.dp)
                             .clip(CircleShape)
-                            .background(if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant),
+                            .background(
+                                if (active) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.outlineVariant
+                            )
                     )
                 }
             }
@@ -212,9 +284,15 @@ private fun StreakCard(streak: ReadingStreakWidget, modifier: Modifier) {
 private fun GoalCard(goal: ReadingGoalWidget, modifier: Modifier) {
     StatCard(modifier) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Filled.Flag, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+            Icon(
+                Icons.Filled.Flag,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(18.dp),
+            )
             Text(
-                if (goal.year > 0) stringResource(R.string.home_goal_title, goal.year.toString()) else stringResource(R.string.home_goal_yearly),
+                if (goal.year > 0) stringResource(R.string.home_goal_title, goal.year.toString())
+                else stringResource(R.string.home_goal_yearly),
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(start = 6.dp),
@@ -230,7 +308,8 @@ private fun GoalCard(goal: ReadingGoalWidget, modifier: Modifier) {
             )
             LinearProgressIndicator(
                 progress = { (goal.completedBooks.toFloat() / target).coerceIn(0f, 1f) },
-                modifier = Modifier.fillMaxWidth().padding(top = 8.dp).height(6.dp).clip(CircleShape),
+                modifier =
+                    Modifier.fillMaxWidth().padding(top = 8.dp).height(6.dp).clip(CircleShape),
             )
         } else {
             Text(
@@ -239,7 +318,12 @@ private fun GoalCard(goal: ReadingGoalWidget, modifier: Modifier) {
                 fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.padding(top = 4.dp),
             )
-            Text(stringResource(R.string.no_goal_set), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
+            Text(
+                stringResource(R.string.no_goal_set),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 8.dp),
+            )
         }
     }
 }
@@ -249,20 +333,27 @@ private fun GoalCard(goal: ReadingGoalWidget, modifier: Modifier) {
 private fun ContinueCard(book: BookCard, label: String, onClick: () -> Unit) {
     val imageUrls = LocalImageUrls.current
     Card(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp).clickable(onClick = onClick),
+        modifier =
+            Modifier.fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 8.dp)
+                .clickable(onClick = onClick),
         shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
     ) {
         Column(Modifier.padding(16.dp)) {
-            Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+            Text(
+                label,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary,
+            )
             Row(Modifier.padding(top = 10.dp)) {
                 Box(
-                    modifier = Modifier
-                        .width(84.dp)
-                        .height(124.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant),
+                    modifier =
+                        Modifier.width(84.dp)
+                            .height(124.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant)
                 ) {
                     if (book.hasCover) {
                         AsyncImage(
@@ -274,9 +365,21 @@ private fun ContinueCard(book: BookCard, label: String, onClick: () -> Unit) {
                     }
                 }
                 Column(Modifier.weight(1f).padding(start = 16.dp)) {
-                    Text(book.title ?: stringResource(R.string.home_untitled), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Text(
+                        book.title ?: stringResource(R.string.home_untitled),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                     book.authors.firstOrNull()?.let {
-                        Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(
+                            it,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
                     }
                     Spacer(Modifier.weight(1f))
                     val progress = (book.readingProgress ?: 0.0).coerceIn(0.0, 100.0)
@@ -284,9 +387,21 @@ private fun ContinueCard(book: BookCard, label: String, onClick: () -> Unit) {
                         progress = { (progress / 100.0).toFloat() },
                         modifier = Modifier.fillMaxWidth().height(6.dp).clip(CircleShape),
                     )
-                    Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("${progress.toInt()}%", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text(stringResource(R.string.open), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+                    Row(
+                        Modifier.fillMaxWidth().padding(top = 6.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Text(
+                            "${progress.toInt()}%",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Text(
+                            stringResource(R.string.open),
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.SemiBold,
+                        )
                     }
                 }
             }

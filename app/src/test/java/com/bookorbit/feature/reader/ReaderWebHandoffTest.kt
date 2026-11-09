@@ -22,7 +22,9 @@ class ReaderWebHandoffTest {
         coEvery { dao.get(34) } returns ReaderProgressEntity(34, "epubcfi(test)", 42.0, 100, true)
         coEvery { api.saveFileProgress(34, any()) } returns Unit
         repo.syncBeforeWeb(34)
-        coVerify { api.saveFileProgress(34, SaveFileProgress("epubcfi(test)", 42.0)) }
+        coVerify {
+            api.saveFileProgress(34, SaveFileProgress("epubcfi(test)", 42.0, source = "text"))
+        }
         coVerify { dao.markSynced(34) }
     }
 
