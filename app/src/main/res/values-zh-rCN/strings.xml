@@ -505,7 +505,16 @@
     <string name="rs_reset_spacing">恢复默认排版</string>
     <string name="rs_battery">电量 %1$d%%</string>
     <string name="rs_turn_curl">仿真</string>
-    <string name="rs_eye_comfort">护眼绿</string>
+    <string name="rs_eye_comfort">护眼模式</string>
     <string name="rs_day">日间</string>
     <string name="rs_night">夜间</string>
+    <string name="rs_colors">颜色</string>
+    <string name="rs_background_short">背景</string>
+    <string name="rs_background_plain">纯色</string>
+    <string name="rs_background_paper">纸纹</string>
+    <string name="rs_background_soft">柔光</string>
+    <string name="rs_page_turn_short">翻页</string>
+    <string name="rs_turn_cover">覆盖</string>
+    <string name="rs_other">其他</string>
+    <string name="rs_quotes">金句</string>
 </resources>

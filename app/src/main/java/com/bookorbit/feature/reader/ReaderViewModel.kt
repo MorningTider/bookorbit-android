@@ -60,6 +60,8 @@ class ReaderViewModel @Inject constructor(
         val loadingFile: Boolean = true,
         val error: UiText? = null,
         val title: String? = null,
+        val author: String = "",
+        val description: String = "",
         val resolved: ResolvedOpen? = null,
         val settings: ReaderSettings = ReaderSettings(),
         val fonts: List<ReaderFontFamily> = emptyList(),
@@ -115,6 +117,18 @@ class ReaderViewModel @Inject constructor(
             // Coach the paginated tap-zones once (they're invisible by design).
             val showHint = settings.flow == "paginated" && !settingsStore.hasSeenPagingHint()
             _ui.update { it.copy(settings = settings, showPagingHint = showHint) }
+            // The cached selected face is part of the initial book open, before any page is
+            // revealed.
+            try {
+                val fonts = fontRepository.catalog(false)
+                val selected = fonts.firstOrNull { it.cssFamily == settings.fontFamily }
+                val faces = fontRepository.cachedFaces(selected)
+                _ui.update { it.copy(fonts = fonts, fontFaces = faces) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                _ui.update { it.copy(message = UiText.of(R.string.rs_fonts_error)) }
+            }
             refreshFonts()
 
             // Fall back to the offline-downloaded copy when the network is unavailable.
@@ -123,7 +137,13 @@ class ReaderViewModel @Inject constructor(
                 _ui.update { it.copy(loadingFile = false, error = UiText.of(R.string.reader_err_load_book)) }
                 return@launch
             }
-            _ui.update { it.copy(title = book.title) }
+            _ui.update {
+                it.copy(
+                    title = book.title,
+                    author = book.authors.joinToString("、") { author -> author.name },
+                    description = book.description.orEmpty(),
+                )
+            }
 
             try {
                 val resolved = source.resolve(book)
@@ -336,7 +356,13 @@ class ReaderViewModel @Inject constructor(
                     val fonts = fontRepository.catalog(refresh)
                     val selected = fonts.firstOrNull { it.cssFamily == _ui.value.settings.fontFamily }
                     val faces = fontRepository.cachedFaces(selected)
-                    _ui.update { it.copy(fonts = fonts, fontFaces = faces) }
+                    _ui.update { state ->
+                        state.copy(
+                            fonts = fonts,
+                            fontFaces = if (faces.isNotEmpty()) faces
+                                else state.fontFaces.filter { it.family == state.settings.fontFamily },
+                        )
+                    }
                 }
             } catch (e: CancellationException) {
                 throw e

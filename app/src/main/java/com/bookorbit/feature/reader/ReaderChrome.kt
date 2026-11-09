@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -14,10 +15,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Bookmarks
-import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.outlined.DarkMode
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -33,11 +34,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.bookorbit.R
 
 @Composable
@@ -61,7 +64,7 @@ fun ReaderChrome(
     val fraction = seeking ?: (percentage / 100f)
     ReaderAppearance(settings) {
         Box(Modifier.fillMaxSize()) {
-            Surface(Modifier.fillMaxWidth().align(Alignment.TopCenter), shadowElevation = 2.dp) {
+            Surface(Modifier.fillMaxWidth().align(Alignment.TopCenter), shadowElevation = 0.dp) {
                 Row(
                     Modifier.statusBarsPadding().padding(horizontal = 6.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -94,7 +97,7 @@ fun ReaderChrome(
                     }
                 }
             }
-            Surface(Modifier.fillMaxWidth().align(Alignment.BottomCenter), shadowElevation = 3.dp) {
+            Surface(Modifier.fillMaxWidth().align(Alignment.BottomCenter), shadowElevation = 0.dp) {
                 Column(
                     Modifier.navigationBarsPadding().padding(horizontal = 12.dp, vertical = 8.dp)
                 ) {
@@ -142,7 +145,7 @@ private fun ReaderAction(icon: ImageVector, label: String, onClick: () -> Unit) 
             verticalArrangement = Arrangement.spacedBy(5.dp),
         ) {
             Icon(icon, contentDescription = null, modifier = Modifier.size(23.dp))
-            Text(label, style = MaterialTheme.typography.labelMedium)
+            Text(label, fontSize = 12.sp)
         }
     }
 }
@@ -154,13 +157,16 @@ fun ReaderBottomNavigation(
     onNight: () -> Unit,
     onSettings: () -> Unit,
 ) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceAround) {
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 64.dp).testTag("reader-bottom-navigation"),
+        horizontalArrangement = Arrangement.SpaceAround,
+    ) {
         ReaderAction(Icons.AutoMirrored.Filled.List, stringResource(R.string.contents), onContents)
         ReaderAction(
-            if (settings.isDark) Icons.Default.LightMode else Icons.Default.DarkMode,
+            if (settings.isDark) Icons.Default.LightMode else Icons.Outlined.DarkMode,
             stringResource(if (settings.isDark) R.string.rs_day else R.string.rs_night),
             onNight,
         )
-        ReaderAction(Icons.Default.Settings, stringResource(R.string.settings), onSettings)
+        ReaderAction(Icons.Outlined.Settings, stringResource(R.string.settings), onSettings)
     }
 }

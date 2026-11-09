@@ -43,3 +43,13 @@ export function typographyCSS(settings) {
     body p { margin-block: ${spacing}em !important; ${settings.paragraphIndent ? "text-indent: 2em !important;" : ""} }
   `;
 }
+
+export function paperBackground(style, color) {
+  const image =
+    style === "paper"
+      ? "repeating-linear-gradient(0deg, rgba(80,60,35,.025) 0, rgba(80,60,35,.025) 1px, transparent 1px, transparent 3px)"
+      : style === "soft"
+        ? "radial-gradient(ellipse at 80% 0%, rgba(160,190,115,.22), transparent 55%), radial-gradient(ellipse at 10% 70%, rgba(255,255,255,.16), transparent 60%)"
+        : "none";
+  return { color, image };
+}

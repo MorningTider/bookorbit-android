@@ -5,7 +5,7 @@ const source = await readFile(
   new URL("../app/src/main/assets/reader/reader-styles.js", import.meta.url),
   "utf8",
 );
-const { fontFaceCSS, typographyCSS } = await import(
+const { fontFaceCSS, typographyCSS, paperBackground } = await import(
   `data:text/javascript;base64,${Buffer.from(source).toString("base64")}`
 );
 
@@ -60,4 +60,17 @@ test("paragraph and character spacing are bounded and indentation is optional", 
     typographyCSS({ ...settings, paragraphIndent: false }),
     /text-indent/,
   );
+});
+
+test("paper backgrounds provide bounded CSS presets and unknown values stay plain", () => {
+  assert.match(
+    paperBackground("paper", "#fff").image,
+    /repeating-linear-gradient/,
+  );
+  assert.match(paperBackground("soft", "#fff").image, /radial-gradient/);
+  assert.deepEqual(paperBackground("plain", "#fff"), {
+    color: "#fff",
+    image: "none",
+  });
+  assert.equal(paperBackground("url(private)", "#fff").image, "none");
 });

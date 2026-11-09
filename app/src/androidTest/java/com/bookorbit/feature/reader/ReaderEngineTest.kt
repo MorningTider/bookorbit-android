@@ -14,6 +14,7 @@ import androidx.activity.ComponentActivity
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -93,18 +94,39 @@ class ReaderEngineTest {
         val book = File(context.cacheDir, "$testName.epub").apply { writeFixture(this) }
         val background =
             mutableStateOf(readerPalette(ReaderSettings(isDark = false, themeName = "sepia")).page)
-        val controller = ReaderController()
+        var controller = ReaderController()
+        val readerInstance = mutableStateOf(0)
+        val cfi = AtomicReference<String?>(null)
         val ready = AtomicBoolean(false)
         val loaded = AtomicBoolean(false)
+        val firstFrameFontReady = AtomicBoolean(false)
+        val loadedEventSeen = AtomicBoolean(false)
+        val initialProgressReportedEarly = AtomicBoolean(false)
         val relocated = AtomicBoolean(false)
         val failure = AtomicReference<String?>(null)
         val fraction = AtomicReference(0.0)
         val chapter = AtomicReference<String?>(null)
-        controller.listener = { event ->
+        val listener: (ReaderEvent) -> Unit = { event ->
             when (event) {
                 ReaderEvent.Ready -> ready.set(true)
-                is ReaderEvent.Loaded -> loaded.set(true)
+                is ReaderEvent.Loaded -> {
+                    loadedEventSeen.set(true)
+                    findWebView(context.window.decorView)!!.evaluateJavascript(
+                        """
+                        (() => {
+                          const d = document.querySelector('foliate-view').renderer.getContents()[0]?.doc;
+                          return !!d && d.fonts.size > 0 && d.fonts.check('22px ${family.cssFamily}') && d.defaultView.getComputedStyle(d.body).fontFamily.includes('${family.cssFamily}');
+                        })()
+                    """
+                            .trimIndent()
+                    ) {
+                        firstFrameFontReady.set(it == "true")
+                        loaded.set(true)
+                    }
+                }
                 is ReaderEvent.Relocate -> {
+                    if (!loadedEventSeen.get()) initialProgressReportedEarly.set(true)
+                    cfi.set(event.cfi)
                     fraction.set(event.fraction ?: 0.0)
                     chapter.set(event.chapterHref)
                     relocated.set(true)
@@ -113,15 +135,18 @@ class ReaderEngineTest {
                 else -> Unit
             }
         }
+        controller.listener = listener
         try {
             compose.setContent {
                 Box(Modifier.fillMaxSize().background(background.value)) {
-                    ReaderWebView(
-                        controller,
-                        repository,
-                        Modifier.fillMaxSize(),
-                        onRendererGone = { failure.set("Renderer gone") },
-                    )
+                    key(readerInstance.value) {
+                        ReaderWebView(
+                            controller,
+                            repository,
+                            Modifier.fillMaxSize(),
+                            onRendererGone = { failure.set("Renderer gone") },
+                        )
+                    }
                 }
             }
             waitUntil("bridge ready", failure) { ready.get() }
@@ -135,10 +160,15 @@ class ReaderEngineTest {
                     pageAnimation = false,
                 )
             controller.open(
-                OpenParams(LocalRef.PlainFile(book), "epub", null, null, settings),
+                OpenParams(LocalRef.PlainFile(book), "epub", null, null, settings, faces),
                 context,
             )
             waitUntil("EPUB loaded", failure) { loaded.get() && relocated.get() }
+            assertEquals(
+                "Initial positions wait for the loaded event",
+                false,
+                initialProgressReportedEarly.get(),
+            )
             val view = AtomicReference<WebView>()
             compose.runOnIdle { view.set(findWebView(context.window.decorView)!!) }
             val webView = view.get()
@@ -192,6 +222,27 @@ class ReaderEngineTest {
                 ),
             )
             screenshot("epub-body-font")
+            val drawCheck = AtomicReference<Bitmap>()
+            compose.runOnIdle {
+                val image = Bitmap.createBitmap(540, 1200, Bitmap.Config.ARGB_8888)
+                val canvas = android.graphics.Canvas(image)
+                canvas.scale(540f / webView.width, 1200f / webView.height)
+                webView.draw(canvas)
+                drawCheck.set(image)
+            }
+            val drawable = drawCheck.get()
+            val directory =
+                File(context.getExternalFilesDir(null), "reader-ui-validation").apply { mkdirs() }
+            File(directory, "webview-only-snapshot.png").outputStream().use {
+                drawable.compress(Bitmap.CompressFormat.PNG, 100, it)
+            }
+            drawable.recycle()
+            File(directory, "startup-regression.txt")
+                .writeText("fontReadyAtLoaded=${firstFrameFontReady.get()}")
+            assertTrue(
+                "Saved font must be ready before revealing the first page",
+                firstFrameFontReady.get(),
+            )
             val start = fraction.get()
             compose.runOnIdle {
                 controller.volumeKeyPagingEnabled = true
@@ -247,9 +298,21 @@ class ReaderEngineTest {
                     Handler(metricsThread.looper),
                 )
             }
+            var inputToMotionMs = 0.0
             try {
                 val beforeCurl = fraction.get()
+                val turnRequestedAt = SystemClock.elapsedRealtimeNanos()
                 InstrumentationRegistry.getInstrumentation().runOnMainSync { controller.next() }
+                waitUntil("paper animation begins", failure) {
+                    var moving = false
+                    InstrumentationRegistry.getInstrumentation().runOnMainSync {
+                        val overlay = host.getChildAt(1) as ReaderPageCurlView
+                        moving = overlay.visibility == View.VISIBLE && overlay.progress > 0f
+                    }
+                    moving
+                }
+                inputToMotionMs =
+                    (SystemClock.elapsedRealtimeNanos() - turnRequestedAt) / 1_000_000.0
                 waitUntil("paper fold visible", failure) {
                     var showing = false
                     InstrumentationRegistry.getInstrumentation().runOnMainSync {
@@ -263,7 +326,12 @@ class ReaderEngineTest {
                 waitUntil("paper turn complete", failure) {
                     !host.isTurning && fraction.get() > beforeCurl
                 }
+                // Keep the screenshot's compositor work outside the timing sample.
+                synchronized(samples) { samples.clear() }
+                synchronized(draws) { draws.clear() }
+                synchronized(vsync) { vsync.clear() }
                 repeat(6) {
+                    SystemClock.sleep(150)
                     val before = fraction.get()
                     InstrumentationRegistry.getInstrumentation().runOnMainSync { controller.next() }
                     waitUntil("consecutive paper turn", failure) {
@@ -290,11 +358,56 @@ class ReaderEngineTest {
                     .zipWithNext { a, b -> b - a }
                     .filter { it > 0 }
                     .sorted()
-            val graphics = InstrumentationRegistry.getArguments().getString("graphics", "unspecified")
+            val graphics =
+                InstrumentationRegistry.getArguments().getString("graphics", "unspecified")
             val result =
-                """{"device":"Android API35 emulator","graphics":"$graphics","frames":${frames.size},"medianMs":${frames[frames.size / 2] / 1_000_000.0},"p95Ms":${frames[(frames.size * .95).toInt().coerceAtMost(frames.lastIndex)] / 1_000_000.0},"drawMedianMs":${drawFrames[drawFrames.size / 2] / 1_000_000.0},"frameIntervalMedianMs":${vsyncFrames[vsyncFrames.size / 2] / 1_000_000.0},"over16_7Ms":${frames.count { it > 16_700_000 }},"maxMs":${frames.last() / 1_000_000.0}}"""
+                """{"device":"Android API35 emulator","graphics":"$graphics","inputToMotionMs":$inputToMotionMs,"frames":${frames.size},"medianMs":${frames[frames.size / 2] / 1_000_000.0},"p95Ms":${frames[(frames.size * .95).toInt().coerceAtMost(frames.lastIndex)] / 1_000_000.0},"drawMedianMs":${drawFrames[drawFrames.size / 2] / 1_000_000.0},"frameIntervalMedianMs":${vsyncFrames[vsyncFrames.size / 2] / 1_000_000.0},"over16_7Ms":${frames.count { it > 16_700_000 }},"maxMs":${frames.last() / 1_000_000.0}}"""
             File(context.getExternalFilesDir(null), "reader-ui-validation/frame-metrics.json")
                 .writeText(result)
+            // Tiny drag movements must never reach Foliate before native curl takes over.
+            val scrollBefore =
+                evaluate(webView, "document.querySelector('foliate-view').renderer.start")
+            val touchTime = SystemClock.uptimeMillis()
+            InstrumentationRegistry.getInstrumentation().runOnMainSync {
+                for ((time, action, x) in
+                    listOf(
+                        Triple(0L, android.view.MotionEvent.ACTION_DOWN, webView.width * .8f),
+                        Triple(20L, android.view.MotionEvent.ACTION_MOVE, webView.width * .8f - 8f),
+                    )) {
+                    android.view.MotionEvent.obtain(
+                            touchTime,
+                            touchTime + time,
+                            action,
+                            x,
+                            webView.height * .5f,
+                            0,
+                        )
+                        .also {
+                            webView.dispatchTouchEvent(it)
+                            it.recycle()
+                        }
+                }
+            }
+            SystemClock.sleep(100)
+            assertEquals(
+                "No pre-animation page shift",
+                scrollBefore,
+                evaluate(webView, "document.querySelector('foliate-view').renderer.start"),
+            )
+            InstrumentationRegistry.getInstrumentation().runOnMainSync {
+                android.view.MotionEvent.obtain(
+                        touchTime,
+                        touchTime + 150,
+                        android.view.MotionEvent.ACTION_CANCEL,
+                        webView.width * .8f - 8,
+                        webView.height * .5f,
+                        0,
+                    )
+                    .also {
+                        webView.dispatchTouchEvent(it)
+                        it.recycle()
+                    }
+            }
             val beforeSwipe = fraction.get()
             InstrumentationRegistry.getInstrumentation().runOnMainSync {
                 val t = SystemClock.uptimeMillis()
@@ -321,6 +434,14 @@ class ReaderEngineTest {
             waitUntil("swipe paper turn", failure) {
                 !host.isTurning && fraction.get() > beforeSwipe
             }
+            controller.applyStyles(settings.copy(pageTurnEffect = "cover", pageAnimation = false))
+            SystemClock.sleep(300)
+            val beforeCover = fraction.get()
+            InstrumentationRegistry.getInstrumentation().runOnMainSync { controller.next() }
+            waitUntil("cover animation begins", failure) { host.isTurning }
+            waitUntil("cover turn complete", failure) {
+                !host.isTurning && fraction.get() > beforeCover
+            }
             controller.applyStyles(settings)
             controller.nextChapter()
             waitUntil("next chapter", failure) { chapter.get()?.contains("chapter2.xhtml") == true }
@@ -328,6 +449,78 @@ class ReaderEngineTest {
             waitUntil("previous chapter", failure) {
                 chapter.get()?.contains("chapter1.xhtml") == true
             }
+            controller.goToFraction(.42)
+            waitUntil("saved nonzero position", failure) {
+                kotlin.math.abs(fraction.get() - .42) < .02
+            }
+            val savedCfi = cfi.get()
+            val savedFraction = fraction.get()
+            val cachedSelection = repository.catalog(false).single()
+            val savedFaces = repository.cachedFaces(cachedSelection)
+            ready.set(false)
+            loaded.set(false)
+            relocated.set(false)
+            firstFrameFontReady.set(false)
+            compose.runOnIdle {
+                controller = ReaderController().also { it.listener = listener }
+                readerInstance.value++
+            }
+            compose.waitForIdle()
+            waitUntil("reopened bridge", failure) { ready.get() }
+            loadedEventSeen.set(false)
+            initialProgressReportedEarly.set(false)
+            relocated.set(false)
+            controller.open(
+                OpenParams(
+                    LocalRef.PlainFile(book),
+                    "epub",
+                    savedCfi,
+                    savedFraction,
+                    settings,
+                    savedFaces,
+                ),
+                context,
+            )
+            waitUntil("reopened book", failure) { loaded.get() && relocated.get() }
+            assertTrue(
+                "Reopened book reveals the selected font on its first frame",
+                firstFrameFontReady.get(),
+            )
+            val reopened = AtomicReference<WebView>()
+            compose.runOnIdle { reopened.set(findWebView(context.window.decorView)!!) }
+            val anchor = org.json.JSONObject.quote(savedCfi)
+            assertEquals(
+                "Saved text remains on the visible page",
+                "true",
+                evaluate(
+                    reopened.get(),
+                    """(() => {
+                const v=document.querySelector('foliate-view'); const target=v.resolveCFI($anchor);
+                const content=v.renderer.getContents().find(c=>c.index===target.index);
+                if(!content) return false;
+                const range=target.anchor(content.doc); const frame=content.doc.defaultView.frameElement.getBoundingClientRect();
+                return Array.from(range.getClientRects()).some(rect=>rect.right+frame.left>0 && rect.left+frame.left<window.innerWidth && rect.bottom+frame.top>0 && rect.top+frame.top<window.innerHeight);
+            })()""",
+                ),
+            )
+            val diagnostic =
+                evaluate(
+                    reopened.get(),
+                    """(() => {
+              const v=document.querySelector('foliate-view'); const r=v.renderer; const d=r.getContents()[0]?.doc;
+              return JSON.stringify({start:r.start,page:r.page,pages:r.pages,body:d?.body?.textContent?.slice(0,80),width:d?.documentElement?.clientWidth,height:d?.documentElement?.clientHeight,fonts:d?.fonts?.status,viewWidth:v.clientWidth,viewHeight:v.clientHeight});
+            })()""",
+                )
+            File(context.getExternalFilesDir(null), "reader-ui-validation/reopen-diagnostic.txt")
+                .writeText(
+                    "alpha=${reopened.get().alpha} visible=${reopened.get().visibility}\n$diagnostic"
+                )
+            screenshot("reopened-font-ready")
+            assertEquals(
+                "No transient layout positions reach progress storage",
+                false,
+                initialProgressReportedEarly.get(),
+            )
             assertTrue("No reader errors", failure.get() == null)
         } finally {
             controller.autoRead(false, 5)
@@ -361,7 +554,7 @@ class ReaderEngineTest {
         while (SystemClock.elapsedRealtime() < deadline) {
             check(failure.get() == null) { failure.get().orEmpty() }
             if (condition()) return
-            SystemClock.sleep(100)
+            SystemClock.sleep(10)
         }
         throw AssertionError("Timed out waiting for $label")
     }
@@ -391,7 +584,15 @@ class ReaderEngineTest {
                         android.graphics.Color.green(pixel) > 80
                 }
             }
-        assertTrue("Reading body is visibly painted", visible > 100)
+        val ink =
+            (bitmap.width / 5 until bitmap.width * 4 / 5 step 3).sumOf { x ->
+                (bitmap.height / 4 until bitmap.height * 3 / 4 step 3).count { y ->
+                    val pixel = bitmap.getPixel(x, y)
+                    android.graphics.Color.red(pixel) < 140 &&
+                        android.graphics.Color.green(pixel) < 140 &&
+                        android.graphics.Color.blue(pixel) < 140
+                }
+            }
         try {
             File(directory, "$name.png").outputStream().use {
                 bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)
@@ -399,6 +600,10 @@ class ReaderEngineTest {
         } finally {
             bitmap.recycle()
         }
+        assertTrue(
+            "Reading body is visibly painted (visible=$visible, ink=$ink)",
+            visible > 100 && ink > 100,
+        )
     }
 
     private fun writeFixture(file: File) {

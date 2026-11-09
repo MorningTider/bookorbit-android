@@ -508,4 +508,13 @@
     <string name="rs_eye_comfort">Eye-comfort green</string>
     <string name="rs_day">Day</string>
     <string name="rs_night">Night</string>
+    <string name="rs_colors">Colors</string>
+    <string name="rs_background_short">Paper</string>
+    <string name="rs_background_plain">Plain</string>
+    <string name="rs_background_paper">Paper</string>
+    <string name="rs_background_soft">Soft</string>
+    <string name="rs_page_turn_short">Turn</string>
+    <string name="rs_turn_cover">Cover</string>
+    <string name="rs_other">Other</string>
+    <string name="rs_quotes">Highlights</string>
 </resources>

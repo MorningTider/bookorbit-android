@@ -12,7 +12,8 @@
  * asset served by WebViewAssetLoader.
  */
 import './foliate/view.js';
-import { fontFaceCSS, typographyCSS } from './reader-styles.js';
+import { settleReaderFonts } from './reader-loading.js';
+import { fontFaceCSS, typographyCSS, paperBackground } from './reader-styles.js';
 import { applyPageAnimation, applySidePadding, createAutoReader } from './reader-navigation.js';
 
 const container = document.getElementById('reader');
@@ -20,13 +21,14 @@ const container = document.getElementById('reader');
 /** Latest applied render settings, re-applied on every section 'load'. */
 let currentSettings = null;
 let fontFaces = [];
+let appliedCSS = null;
 /** The <foliate-view> element, once created. */
 let view = null;
 /** Base64 transfer state for the book currently being opened. */
 let pending = null;
 const autoReader = createAutoReader({
   next: (distance) => {
-    if (currentSettings?.pageCurl && currentSettings.flow === 'paginated') post({ type: 'pageTurnRequested' });
+    if ((currentSettings?.pageTurnEffect === 'cover' || currentSettings?.pageTurnEffect === 'curl' || (!currentSettings?.pageTurnEffect && currentSettings?.pageCurl)) && currentSettings.flow === 'paginated') post({ type: 'pageTurnRequested' });
     else return view?.renderer?.next(distance);
   },
   isScrolled: () => currentSettings?.flow === 'scrolled',
@@ -95,7 +97,8 @@ function generateCSS(s) {
   const theme = themeFor(s.themeName);
   const mode = s.isDark ? theme.dark : theme.light;
   const dark = s.isDark;
-  const forceBg = dark || theme.light.bg !== '#ffffff';
+  const forceBg = dark || theme.light.bg !== '#ffffff' || (s.backgroundStyle && s.backgroundStyle !== 'plain');
+  const background = paperBackground(s.backgroundStyle, mode.bg);
   const fontFamilyRule = s.fontFamily
     ? `body { font-family: ${s.fontFamily} !important; } body * { font-family: inherit !important; }`
     : '';
@@ -118,7 +121,7 @@ function generateCSS(s) {
     pre { white-space: pre-wrap !important; tab-size: 2; }
     ${
       forceBg
-        ? `html, body { color: ${mode.fg} !important; background: ${mode.bg} !important; }
+        ? `html, body { color: ${mode.fg} !important; background: ${mode.bg} !important; background-image: ${background.image} !important; }
            body * { color: inherit !important; border-color: currentColor !important; background-color: transparent !important; }
            a:any-link { color: ${mode.link} !important; }
            svg, img { background-color: transparent !important; ${!dark ? 'mix-blend-mode: multiply;' : ''} }`
@@ -132,24 +135,36 @@ function generateCSS(s) {
 // Ported from useReaderState.applyToRenderer.
 function applyStyles(settings) {
   if (!view) return;
-  currentSettings = { ...DEFAULT_SETTINGS, ...(settings ?? currentSettings ?? {}) };
+  currentSettings = {
+    ...DEFAULT_SETTINGS,
+    ...(settings ?? currentSettings ?? {}),
+  };
   const s = currentSettings;
   const theme = themeFor(s.themeName);
   const paper = (s.isDark ? theme.dark : theme.light).bg;
+  const background = paperBackground(s.backgroundStyle, paper);
   document.documentElement.style.backgroundColor = paper;
   container.style.backgroundColor = paper;
   view.style.backgroundColor = paper;
+  view.style.backgroundImage = background.image;
   const r = view.renderer;
   if (!r) return;
-  r.setAttribute('max-column-count', String(s.maxColumnCount));
+  const attr = (name, value) => {
+    if (r.getAttribute(name) !== value) r.setAttribute(name, value);
+  };
+  attr("max-column-count", String(s.maxColumnCount));
   applySidePadding(r, s.sidePadding, view.clientWidth);
-  r.setAttribute('max-inline-size', `${s.maxInlineSize}px`);
-  r.setAttribute('max-block-size', `${s.maxBlockSize}px`);
-  if (s.flow === 'paginated') r.setAttribute('margin', '40px');
-  else r.removeAttribute('margin');
-  r.setAttribute('flow', s.flow);
+  attr("max-inline-size", `${s.maxInlineSize}px`);
+  attr("max-block-size", `${s.maxBlockSize}px`);
+  if (s.flow === "paginated") attr("margin", "40px");
+  else r.removeAttribute("margin");
+  attr("flow", s.flow);
   applyPageAnimation(r, s);
-  if (typeof r.setStyles === 'function') r.setStyles(generateCSS(s));
+  const css = generateCSS(s);
+  if (typeof r.setStyles === "function" && css !== appliedCSS) {
+    r.setStyles(css);
+    appliedCSS = css;
+  }
 }
 
 /* --------------------------------------------------------------- toc/meta */
@@ -459,6 +474,8 @@ function createView() {
       fraction: typeof d.fraction === 'number' ? d.fraction : null,
       chapterTitle: d.tocItem?.label ?? null,
       chapterHref: d.tocItem?.href ?? null,
+      atStart: view.renderer?.atStart === true,
+      atEnd: view.renderer?.atEnd === true,
       location: d.location ?? null,
     });
   });
@@ -492,22 +509,15 @@ const MIME = {
 async function openBook(meta, parts) {
   try {
     createView();
-    const format = (meta.format ?? 'epub').toLowerCase();
-    const blob = new Blob(parts, { type: MIME[format] ?? 'application/octet-stream' });
+    const format = (meta.format ?? "epub").toLowerCase();
+    const blob = new Blob(parts, {
+      type: MIME[format] ?? "application/octet-stream",
+    });
     const file = new File([blob], `book.${format}`, { type: blob.type });
 
     await view.open(file);
 
     applyStyles(meta.settings ?? currentSettings);
-
-    post({
-      type: 'loaded',
-      toc: serializeToc(view.book?.toc),
-      metadata: {
-        title: view.book?.metadata?.title ?? null,
-        language: view.book?.metadata?.language ?? null,
-      },
-    });
 
     let navigated = false;
     if (meta.cfi) {
@@ -518,17 +528,46 @@ async function openBook(meta, parts) {
         navigated = false;
       }
     }
-    if (!navigated && typeof meta.fraction === 'number' && meta.fraction > 0 && typeof view.goToFraction === 'function') {
+    if (
+      !navigated &&
+      typeof meta.fraction === "number" &&
+      meta.fraction > 0 &&
+      typeof view.goToFraction === "function"
+    ) {
       try {
-        view.goToFraction(meta.fraction);
+        await view.goToFraction(meta.fraction);
         navigated = true;
       } catch {
         navigated = false;
       }
     }
     if (!navigated) await view.goTo(0).catch(() => {});
+    await settleReaderFonts(view, currentSettings, fontFaces);
+    // Font metrics can alter pagination. Resolve the saved anchor again after fonts settle.
+    if (navigated && meta.cfi) await view.goTo(meta.cfi);
+    else if (navigated && typeof meta.fraction === "number")
+      await view.goToFraction(meta.fraction);
+    await settleReaderFonts(view, currentSettings, fontFaces);
+    post({
+      type: "loaded",
+      toc: serializeToc(view.book?.toc),
+      metadata: {
+        title: view.book?.metadata?.title ?? null,
+        language: view.book?.metadata?.language ?? null,
+      },
+    });
   } catch (e) {
-    postError(e?.message ?? 'Failed to open book');
+    postError(e?.message ?? "Failed to open book");
+  }
+}
+
+async function turnPage(next) {
+  try {
+    await (next ? view.next() : view.prev());
+  } catch (error) {
+    postError(error?.message ?? "Page turn failed");
+  } finally {
+    post({ type: "pageTurnCompleted" });
   }
 }
 
@@ -537,6 +576,8 @@ async function openBook(meta, parts) {
 window.__readerBegin = (metaJson) => {
   try {
     pending = { meta: JSON.parse(metaJson), parts: [] };
+    fontFaces = Array.isArray(pending.meta.fontFaces) ? pending.meta.fontFaces : [];
+    if (pending.meta.settings) currentSettings = { ...DEFAULT_SETTINGS, ...pending.meta.settings };
     if (pending.meta.settings) currentSettings = { ...DEFAULT_SETTINGS, ...pending.meta.settings };
   } catch (e) {
     postError(e?.message ?? 'Bad open payload');
@@ -588,10 +629,10 @@ window.__readerCommand = (json) => {
       else autoReader.stop();
       break;
     case 'prev':
-      view.prev?.();
+      void turnPage(false);
       break;
     case 'next':
-      view.next?.();
+      void turnPage(true);
       break;
     case 'setFonts':
       fontFaces = Array.isArray(cmd.faces) ? cmd.faces : [];

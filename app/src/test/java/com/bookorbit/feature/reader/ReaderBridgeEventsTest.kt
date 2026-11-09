@@ -78,4 +78,31 @@ class ReaderBridgeEventsTest {
         assertEquals(15, settings.autoPageIntervalSeconds)
     }
 
+    @Test
+    fun `turn completion and page edges are available before another input`() {
+        assertEquals(
+            ReaderEvent.PageTurnCompleted,
+            ReaderBridge.parseEvent("""{"type":"pageTurnCompleted"}"""),
+        )
+        val event =
+            ReaderBridge.parseEvent("""{"type":"relocate","atStart":true,"atEnd":false}""")
+                as ReaderEvent.Relocate
+        assertTrue(event.atStart)
+        assertEquals(false, event.atEnd)
+    }
+
+    @Test
+    fun `new turn preferences override legacy flags and retain safe defaults`() {
+        val legacy =
+            ReaderBridge.json.decodeFromString<ReaderSettings>(
+                """{"pageCurl":true,"pageAnimation":false}"""
+            )
+        assertEquals("curl", legacy.turnEffect())
+        assertEquals("plain", legacy.backgroundStyle)
+        assertEquals("slide", legacy.copy(pageTurnEffect = "slide").turnEffect())
+        assertEquals("none", legacy.copy(pageTurnEffect = "none").turnEffect())
+        assertEquals("cover", legacy.copy(pageTurnEffect = "cover").turnEffect())
+        assertEquals("scrolled", legacy.copy(flow = "scrolled").turnEffect())
+        assertEquals("curl", legacy.copy(pageTurnEffect = "unknown").turnEffect())
+    }
 }

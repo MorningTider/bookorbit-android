@@ -7,11 +7,14 @@ export function applySidePadding(renderer, sidePadding, viewportWidth) {
 }
 
 export function applyPageAnimation(renderer, settings) {
-  if (
-    settings.pageAnimation !== false &&
-    settings.pageCurl !== true &&
-    settings.flow !== "scrolled"
-  )
+  const effect =
+    settings.pageTurnEffect ??
+    (settings.pageCurl
+      ? "curl"
+      : settings.pageAnimation === false
+        ? "none"
+        : "slide");
+  if (effect === "slide" && settings.flow !== "scrolled")
     renderer.setAttribute("animated", "");
   else renderer.removeAttribute("animated");
 }

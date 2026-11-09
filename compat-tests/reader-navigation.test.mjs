@@ -143,3 +143,26 @@ test("native paper curl disables the Foliate slide animation", () => {
   });
   assert.equal(values.has("animated"), false);
 });
+
+test("explicit native effects override legacy animation flags", () => {
+  const values = new Set();
+  const renderer = {
+    setAttribute: (key) => values.add(key),
+    removeAttribute: (key) => values.delete(key),
+  };
+  for (const effect of ["cover", "curl", "none"]) {
+    applyPageAnimation(renderer, {
+      flow: "paginated",
+      pageAnimation: true,
+      pageTurnEffect: effect,
+    });
+    assert.equal(values.has("animated"), false);
+  }
+  applyPageAnimation(renderer, {
+    flow: "paginated",
+    pageAnimation: false,
+    pageCurl: true,
+    pageTurnEffect: "slide",
+  });
+  assert.equal(values.has("animated"), true);
+});

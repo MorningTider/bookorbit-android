@@ -31,8 +31,8 @@ fun ReaderAppearance(settings: ReaderSettings, content: @Composable () -> Unit) 
     MaterialTheme(
         colorScheme =
             scheme.copy(
-                primary = colors.accent,
-                onPrimary = if (settings.isDark) Color.Black else Color.White,
+                primary = colors.text,
+                onPrimary = colors.page,
                 primaryContainer = colors.accent.copy(alpha = 0.12f).compositeOver(colors.panel),
                 onPrimaryContainer = colors.text,
                 secondary = colors.accent,

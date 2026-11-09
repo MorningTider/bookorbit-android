@@ -187,7 +187,8 @@ fun ReaderScreen(onBack: () -> Unit, vm: ReaderViewModel = hiltViewModel()) {
                 is ReaderEvent.Relocate ->
                     vm.onRelocate(event.cfi, event.fraction, event.chapterTitle, event.chapterHref)
                 ReaderEvent.AutoReadStopped -> autoReading = false
-                ReaderEvent.PageTurnRequested -> Unit
+                ReaderEvent.PageTurnRequested,
+                ReaderEvent.PageTurnCompleted -> Unit
                 is ReaderEvent.Error -> {
                     autoReading = false
                     vm.onError(event.message)
@@ -229,7 +230,8 @@ fun ReaderScreen(onBack: () -> Unit, vm: ReaderViewModel = hiltViewModel()) {
             opened = true
             withContext(Dispatchers.IO) {
                 controller.open(
-                    openParamsFor(resolved.ref, resolved.format, resolved.initial, ui.settings),
+                    openParamsFor(resolved.ref, resolved.format, resolved.initial, ui.settings)
+                        .copy(fontFaces = ui.fontFaces),
                     context,
                 )
             }
@@ -428,6 +430,14 @@ fun ReaderScreen(onBack: () -> Unit, vm: ReaderViewModel = hiltViewModel()) {
             settings = ui.settings,
             bookTitle = ui.title.orEmpty(),
             currentHref = ui.chapterHref,
+            bookId = vm.bookId,
+            author = ui.author,
+            description = ui.description,
+            annotations = ui.annotations,
+            onSearch = {
+                tocVisible = false
+                searchVisible = true
+            },
             onNight = { vm.updateSettings(ui.settings.copy(isDark = !ui.settings.isDark)) },
             onSettings = {
                 tocVisible = false

@@ -41,9 +41,12 @@ sealed interface ReaderEvent {
         val fraction: Double?,
         val chapterTitle: String?,
         val chapterHref: String? = null,
+        val atStart: Boolean = false,
+        val atEnd: Boolean = false,
     ) : ReaderEvent
     data object AutoReadStopped : ReaderEvent
     data object PageTurnRequested : ReaderEvent
+    data object PageTurnCompleted : ReaderEvent
     data class Error(val message: String) : ReaderEvent
 
     /** A tap on the page body (not on a link or highlight). [x] is 0..1 across the viewport. */
@@ -107,9 +110,12 @@ object ReaderBridge {
                 fraction = obj["fraction"]?.jsonPrimitive?.doubleOrNull,
                 chapterTitle = obj["chapterTitle"]?.jsonPrimitive?.contentOrNull,
                 chapterHref = obj["chapterHref"]?.jsonPrimitive?.contentOrNull,
+                atStart = obj["atStart"]?.jsonPrimitive?.booleanOrNull ?: false,
+                atEnd = obj["atEnd"]?.jsonPrimitive?.booleanOrNull ?: false,
             )
             "autoReadStopped" -> ReaderEvent.AutoReadStopped
             "pageTurnRequested" -> ReaderEvent.PageTurnRequested
+            "pageTurnCompleted" -> ReaderEvent.PageTurnCompleted
             "error" -> ReaderEvent.Error(obj["message"]?.jsonPrimitive?.contentOrNull ?: "Reader error")
             "tap" -> obj["x"]?.jsonPrimitive?.doubleOrNull?.let { ReaderEvent.Tap(it) }
             "selection" -> obj["text"]?.jsonPrimitive?.contentOrNull?.let {

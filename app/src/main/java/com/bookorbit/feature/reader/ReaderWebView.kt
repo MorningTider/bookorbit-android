@@ -31,6 +31,7 @@ data class OpenParams(
     val cfi: String?,
     val fraction: Double?,
     val settings: ReaderSettings,
+    val fontFaces: List<ReaderFontFace> = emptyList(),
 )
 
 @Serializable
@@ -39,6 +40,7 @@ private data class OpenMeta(
     val cfi: String?,
     val fraction: Double?,
     val settings: ReaderSettings,
+    val fontFaces: List<ReaderFontFace> = emptyList(),
 )
 
 // Base64 is streamed in slices so a large book never rides in a single evaluateJavascript call.
@@ -55,12 +57,16 @@ private const val CHUNK_BYTES = CHUNK_CHARS / 4 * 3
  */
 class ReaderController {
     @Volatile private var webView: WebView? = null
+    private var presented = false
+    private var initialLocation: ReaderEvent.Relocate? = null
 
     /** Set by the screen to receive parsed reader events. */
     var listener: ((ReaderEvent) -> Unit)? = null
 
     fun attach(webView: WebView) {
         this.webView = webView
+        presented = false
+        initialLocation = null
     }
 
     fun detach(view: WebView) {
@@ -74,11 +80,30 @@ class ReaderController {
         Handler(Looper.getMainLooper()).post {
             if (webView === view) {
                 when (event) {
-                    is ReaderEvent.Relocate -> curlHost?.relocated()
+                    is ReaderEvent.Relocate -> {
+                        atStart = event.atStart
+                        atEnd = event.atEnd
+                        curlHost?.relocated()
+                    }
                     ReaderEvent.PageTurnRequested -> next()
+                    ReaderEvent.PageTurnCompleted -> curlHost?.pageTurnCompleted()
                     else -> Unit
                 }
-                listener?.invoke(event)
+                if (event is ReaderEvent.Relocate && !presented) {
+                    initialLocation = event
+                    return@post
+                }
+                if (event is ReaderEvent.Loaded) {
+                    val reveal = {
+                        if (webView === view) {
+                            presented = true
+                            listener?.invoke(event)
+                            initialLocation?.let { listener?.invoke(it) }
+                            initialLocation = null
+                        }
+                    }
+                    curlHost?.present(reveal) ?: reveal()
+                } else listener?.invoke(event)
             }
         }
     }
@@ -111,6 +136,11 @@ class ReaderController {
     var volumeKeyPagingEnabled: Boolean = false
     internal var curlHost: ReaderPageCurlHost? = null
     internal var pageCurlEnabled = false
+    internal var pageCoverEnabled = false
+    internal var atStart = false
+    internal var atEnd = false
+    private var lastFonts: List<ReaderFontFace>? = null
+    private var lastLayout: ReaderSettings? = null
     internal var pageColor = android.graphics.Color.WHITE
 
     fun previousChapter() = command(buildJsonObject { put("type", "previousChapter") }.toString())
@@ -140,13 +170,14 @@ class ReaderController {
         command(buildJsonObject { put("type", if (next) "next" else "prev") }.toString())
 
     private fun updatePageAppearance(settings: ReaderSettings) {
-        val enabled = settings.pageCurl && settings.flow == "paginated"
+        val enabled = settings.turnEffect() in setOf("curl", "cover")
         val theme =
             READER_THEMES.firstOrNull { it.name == settings.themeName } ?: READER_THEMES.first()
         val color = (if (settings.isDark) theme.darkBg else theme.lightBg).toInt()
         val update = {
             if (enabled != pageCurlEnabled || color != pageColor) curlHost?.clear()
             pageCurlEnabled = enabled
+            pageCoverEnabled = settings.turnEffect() == "cover"
             pageColor = color
         }
         if (Looper.myLooper() == Looper.getMainLooper()) update()
@@ -195,6 +226,9 @@ class ReaderController {
     fun clearSelection() = command(buildJsonObject { put("type", "clearSelection") }.toString())
 
     fun setFonts(faces: List<ReaderFontFace>) {
+        if (lastFonts == faces) return
+        lastFonts = faces
+        curlHost?.invalidatePage()
         val cmd = buildJsonObject {
             put("type", "setFonts")
             put(
@@ -210,6 +244,17 @@ class ReaderController {
 
     fun applyStyles(settings: ReaderSettings) {
         updatePageAppearance(settings)
+        val layout =
+            settings.copy(
+                brightness = -1.0,
+                keepScreenOn = true,
+                volumeKeyPaging = false,
+                showReadingStatus = true,
+                autoPageIntervalSeconds = 15,
+            )
+        if (lastLayout == layout) return
+        lastLayout = layout
+        curlHost?.invalidatePage()
         val cmd = buildJsonObject {
             put("type", "applyStyles")
             put(
@@ -227,8 +272,14 @@ class ReaderController {
     // the chunk size instead of the whole file (a naive readBytes()+encodeToString() on a 90MB
     // EPUB peaks at ~450MB and reliably OOMs on default heap sizes).
     private fun runOpen(params: OpenParams, context: Context) {
+        webView?.post {
+            presented = false
+            initialLocation = null
+        }
         updatePageAppearance(params.settings)
-        val meta = OpenMeta(params.format, params.cfi, params.fraction, params.settings)
+        lastFonts = params.fontFaces
+        val meta =
+            OpenMeta(params.format, params.cfi, params.fraction, params.settings, params.fontFaces)
         val metaJson = ReaderBridge.json.encodeToString(OpenMeta.serializer(), meta)
         eval(ReaderBridge.jsBegin(metaJson))
 
@@ -291,7 +342,13 @@ private class ReaderNativeWebView(context: Context, private val controller: Read
                         it.recycle()
                     }
                 }
-                if (draggingPage) return true
+                if (
+                    draggingPage ||
+                        (event.pointerCount == 1 &&
+                            event.eventTime - downAt <
+                                android.view.ViewConfiguration.getLongPressTimeout())
+                )
+                    return true
             }
             android.view.MotionEvent.ACTION_UP ->
                 if (draggingPage) {

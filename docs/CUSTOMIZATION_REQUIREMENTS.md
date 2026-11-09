@@ -45,9 +45,20 @@
 | BA-C15 | 护眼配色与状态 | 浅绿同步正文和面板，浅色与夜间，时间、电量和进度可隐藏                     |
 | BA-C16 | 视觉及性能     | 核对用户截图，记录模拟器帧耗时，手机流畅度独立验收                         |
 
-仿真翻页使用原生 PixelCopy 获取当前正文快照，Canvas 网格变形绘制纸背与阴影。Foliate 继续定位正文并保存 CFI。快照最长边为 1280 像素，一次持有一张，结束、旋转和释放阅读器时回收。快照失败或内存不足时执行普通翻页。
+仿真翻页在正文稳定后预缓存纯 WebView 图像，Canvas 网格变形绘制纸背与阴影。输入路径直接启动动画，Foliate 负责正文定位及 CFI，并在导航完成后通知宿主。快照最长边为 1280 像素，一次持有一张，结束、旋转和释放阅读器时回收。缓存未就绪或内存不足时执行普通翻页。
 
-护眼采用浅绿色配色。图片背景、覆盖翻页、跟手拖动取消和参考图的附加内容页在剩余清单中跟踪。
+护眼采用浅绿色配色。覆盖翻页、纸纹/柔光预设和目录详情/金句/笔记页签已接入。图片背景、跟手拖动取消、章节字数和重排后的精确页数在剩余清单中跟踪。
+
+## 2026-11-09 问题回归
+
+候选为 `0.7.1-custom.4`，版本码 `705`。
+
+| 编号   | 需求               | 验收要求                                                                             |
+| ------ | ------------------ | ------------------------------------------------------------------------------------ |
+| BA-C17 | 重新打开的首屏排版 | 保存的字体和排版在首屏显示前加载，缓存刷新保留当前字体，重新进入恢复实际阅读位置     |
+| BA-C18 | 翻页响应与稳定性   | 正文预缓存移出输入路径，小幅拖动不推移底层正文，连续操作等待引擎解锁，工具栏保持固定 |
+
+BA-C11、BA-C12、BA-C16 同时补充参考图的紧凑行布局、七色选择、背景、覆盖翻页及详情/目录/金句/笔记页签。布局支持窄屏和大系统字号，所有文字使用国际化资源。
 
 ## 字体与同步约定
 
@@ -61,4 +72,4 @@
 
 阅读操作参考番茄的目录、设置和日夜切换入口。产品截图和介绍见 [应用宝番茄免费小说页面](https://sj.qq.com/appdetail/com.dragon.read)。实现基于本项目现有 Compose 和 Foliate 阅读器，使用 BookOrbit 服务端接口。
 
-原生绘制依据 [Android PixelCopy](https://developer.android.com/reference/android/view/PixelCopy)、[Canvas](https://developer.android.com/reference/android/graphics/Canvas) 与 [硬件加速说明](https://developer.android.com/develop/ui/views/graphics/hardware-accel)。番茄内部算法缺少可核实的公开说明，本仓库维护自有实现。
+原生绘制依据 [Canvas](https://developer.android.com/reference/android/graphics/Canvas)、[硬件加速说明](https://developer.android.com/develop/ui/views/graphics/hardware-accel) 与 [帧提交回调](<https://developer.android.com/reference/android/view/ViewTreeObserver#registerFrameCommitCallback(java.lang.Runnable)>)。番茄内部算法缺少可核实的公开说明，本仓库维护自有实现。

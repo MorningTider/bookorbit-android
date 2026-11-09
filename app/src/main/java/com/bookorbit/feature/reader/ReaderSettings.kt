@@ -31,6 +31,8 @@ data class ReaderSettings(
     val themeName: String = "default",
     val pageAnimation: Boolean = true,
     val pageCurl: Boolean = false,
+    val pageTurnEffect: String? = null,
+    val backgroundStyle: String = "plain",
     val volumeKeyPaging: Boolean = false,
     val showReadingStatus: Boolean = true,
     val autoPageIntervalSeconds: Int = 15,
@@ -57,3 +59,12 @@ fun clampFontSize(v: Int): Int = v.coerceIn(FONT_SIZE_RANGE.first, FONT_SIZE_RAN
 
 fun clampLineHeight(v: Double): Double =
     (Math.round(v * 10) / 10.0).coerceIn(LINE_HEIGHT_RANGE.start, LINE_HEIGHT_RANGE.endInclusive)
+
+fun ReaderSettings.turnEffect(): String =
+    when {
+        flow == "scrolled" -> "scrolled"
+        pageTurnEffect in setOf("curl", "cover", "slide", "none") -> pageTurnEffect!!
+        pageCurl -> "curl"
+        pageAnimation -> "slide"
+        else -> "none"
+    }

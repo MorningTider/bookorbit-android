@@ -17,6 +17,8 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.onLast
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -28,6 +30,7 @@ import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.bookorbit.R
+import com.bookorbit.core.model.BookAnnotation
 import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -109,6 +112,10 @@ class ReaderInteractionTest {
                             settings = settings,
                             bookTitle = "阅读设置交互验收",
                             currentHref = "chapter-42",
+                            author = "验收作者",
+                            description = "<p>这是图书详情的验收简介。</p>",
+                            annotations =
+                                listOf(BookAnnotation(1, 1, "saved-cfi", "验收金句", note = "验收笔记")),
                         )
                     }
                 }
@@ -119,6 +126,17 @@ class ReaderInteractionTest {
     @Test
     fun compactSettingsAndFontSelection() {
         show()
+        compose
+            .onNodeWithText(compose.activity.getString(R.string.rs_brightness))
+            .performSemanticsAction(SemanticsActions.GetTextLayoutResult) { action ->
+                val results = mutableListOf<androidx.compose.ui.text.TextLayoutResult>()
+                action(results)
+                assertEquals(1, results.single().lineCount)
+                assertTrue(
+                    "Label fits horizontally: ${results.single().size}",
+                    !results.single().didOverflowWidth,
+                )
+            }
         compose.onNodeWithTag("reader-font-larger").assertIsDisplayed().performClick()
         compose.runOnIdle { assertEquals(17, settings.fontSize) }
         screenshot("compact-settings")
@@ -171,7 +189,11 @@ class ReaderInteractionTest {
         showContents = true
         show()
         compose.onNodeWithText("第42章 山间清风").assertIsDisplayed().assertIsSelected()
+        compose.onAllNodesWithTag("reader-bottom-navigation").onLast().assertIsDisplayed()
         screenshot("contents")
+        compose
+            .onNodeWithContentDescription(compose.activity.getString(R.string.rs_search_chapters))
+            .performClick()
         compose
             .onNodeWithText(compose.activity.getString(R.string.rs_search_chapters))
             .performTextInput("第99章")
@@ -202,7 +224,38 @@ class ReaderInteractionTest {
             assertEquals(false, settings.pageAnimation)
             assertEquals("paginated", settings.flow)
         }
+        compose.onAllNodesWithTag("reader-bottom-navigation").onLast().assertIsDisplayed()
         screenshot("eye-comfort-curl-settings")
+    }
+
+    @Test
+    fun coverBackgroundAndContentsTabsUseTheSavedState() {
+        show()
+        compose
+            .onNodeWithText(compose.activity.getString(R.string.rs_turn_cover))
+            .performScrollTo()
+            .performClick()
+        compose.runOnIdle { assertEquals("cover", settings.turnEffect()) }
+        compose
+            .onNodeWithText(compose.activity.getString(R.string.rs_background_soft))
+            .performScrollTo()
+            .performClick()
+        compose.runOnIdle { assertEquals("soft", settings.backgroundStyle) }
+        compose.runOnIdle {
+            showSettings = false
+            showContents = true
+        }
+        compose.onNodeWithText("验收作者").assertIsDisplayed()
+        compose.onNodeWithText(compose.activity.getString(R.string.details)).performClick()
+        compose.onNodeWithText("这是图书详情的验收简介。").assertIsDisplayed()
+        compose.onNodeWithText(compose.activity.getString(R.string.rs_quotes)).performClick()
+        compose.onNodeWithText("验收金句").assertIsDisplayed()
+        compose.onNodeWithText(compose.activity.getString(R.string.tab_notes)).performClick()
+        compose.onNodeWithText("验收笔记").assertIsDisplayed()
+        compose.onAllNodesWithTag("reader-bottom-navigation").onLast().assertIsDisplayed()
+        screenshot("contents-notes")
+        compose.onNodeWithText("验收金句").performClick()
+        compose.runOnIdle { assertEquals("saved-cfi", selectedHref) }
     }
 
     private fun screenshot(name: String) {
