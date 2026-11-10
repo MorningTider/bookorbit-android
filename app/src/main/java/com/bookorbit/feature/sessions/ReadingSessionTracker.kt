@@ -11,18 +11,18 @@ import com.bookorbit.core.db.PendingReadingSessionEntity
 import com.bookorbit.core.model.SaveReadingSession
 import com.bookorbit.core.network.ApiService
 import com.bookorbit.core.sync.SyncScheduler
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
-import retrofit2.HttpException
 import java.time.Instant
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import retrofit2.HttpException
 
 /**
  * Reports reading and listening time to the server so mobile activity counts toward the web's
@@ -89,6 +89,10 @@ class ReadingSessionTracker @Inject constructor(
         recorder.progress(percent, now())
         checkpointIfDue()
     }
+
+    @Synchronized
+    fun currentReading(fileId: Int): SessionSnapshot? =
+        if (recorder.key == "read:$fileId") recorder.snapshot(now()) else null
 
     // --- listening (audiobook) ---
 
@@ -186,10 +190,12 @@ class ReadingSessionTracker @Inject constructor(
         )
         try {
             api.saveReadingSession(e.fileId, body)
-            Log.d(TAG, "sent ${e.sessionType} session ${e.sessionId} file=${e.fileId} ${e.durationSeconds}s end=${e.endProgress}")
+            Log.d(TAG, "sent ${e.sessionType} session ${e.sessionId} file=${e.fileId} ${e.durationSeconds}s end=${e.endProgress}",
+            )
             dao.deleteIfUnchanged(e.sessionId, e.endedAt)
         } catch (t: HttpException) {
-            // A 4xx other than authentication/timeout/rate-limit won't succeed on retry (e.g. the file was removed).
+            // A 4xx other than authentication/timeout/rate-limit won't succeed on retry (e.g. the
+            // file was removed).
             if (t.code() in 400..499 && t.code() != 401 && t.code() != 408 && t.code() != 429) {
                 Log.w(TAG, "dropping session ${e.sessionId}: HTTP ${t.code()}")
                 dao.deleteIfUnchanged(e.sessionId, e.endedAt)

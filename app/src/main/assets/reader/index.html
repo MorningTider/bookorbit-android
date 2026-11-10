@@ -19,7 +19,10 @@
         user-select: none;
         -webkit-tap-highlight-color: transparent;
       }
-      #reader {
+      body { display: flex; flex-direction: column; }
+      #chapter-title { flex: none; font: 11px sans-serif; opacity: .55; padding: 8px 22px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+      #chapter-title[hidden] { display: none; }
+      #reader { flex: 1; min-height: 0;
         width: 100%;
         height: 100%;
         display: block;
@@ -27,6 +30,7 @@
     </style>
   </head>
   <body>
+    <div id="chapter-title" hidden></div>
     <div id="reader"></div>
     <!--
       bridge.js (kept verbatim) posts events through window.ReactNativeWebView.postMessage. On

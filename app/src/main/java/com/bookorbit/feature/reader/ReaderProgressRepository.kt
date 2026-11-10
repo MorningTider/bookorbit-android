@@ -124,6 +124,9 @@ constructor(
         }
     }
 
+    /** Wait for reports queued by the reader that just closed, before refreshing its shelf. */
+    suspend fun awaitReports() = writes.withLock { }
+
     suspend fun flushPending(): Boolean =
         writes.withLock {
             for (entry in dao.dirtyEntries()) upload(entry)

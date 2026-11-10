@@ -11,12 +11,27 @@
  * Keep this file dependency-free and in plain ES module JS — it is shipped as a static
  * asset served by WebViewAssetLoader.
  */
-import './foliate/view.js';
-import { settleReaderFonts, prepareSectionFonts } from './reader-loading.js';
-import { fontFaceCSS, typographyCSS, paperBackground } from './reader-styles.js';
-import { applyPageAnimation, applySidePadding, createAutoReader } from './reader-navigation.js';
+import "./foliate/view.js";
+import { settleReaderFonts, prepareSectionFonts } from "./reader-loading.js";
+import {
+  fontFaceCSS,
+  typographyCSS,
+  paperBackground,
+} from "./reader-styles.js";
+import {
+  applyPageAnimation,
+  applySidePadding,
+  createAutoReader,
+} from "./reader-navigation.js";
 
-const container = document.getElementById('reader');
+import { createPageCounter, pagePosition } from "./reader-pagination.js";
+
+const chapterHeader = document.getElementById("chapter-title");
+let pageCounter = null;
+let pageCounterTimer = null;
+let pageCounterKey = null;
+
+const container = document.getElementById("reader");
 
 /** Latest applied render settings, re-applied on every section 'load'. */
 let currentSettings = null;
@@ -28,15 +43,23 @@ let view = null;
 let pending = null;
 const autoReader = createAutoReader({
   next: (distance) => {
-    if ((currentSettings?.pageTurnEffect === 'cover' || currentSettings?.pageTurnEffect === 'curl' || (!currentSettings?.pageTurnEffect && currentSettings?.pageCurl)) && currentSettings.flow === 'paginated') post({ type: 'pageTurnRequested' });
+    if (
+      (currentSettings?.pageTurnEffect === "cover" ||
+        currentSettings?.pageTurnEffect === "curl" ||
+        (!currentSettings?.pageTurnEffect && currentSettings?.pageCurl)) &&
+      currentSettings.flow === "paginated"
+    )
+      post({ type: "pageTurnRequested" });
     else return view?.renderer?.next(distance);
   },
-  isScrolled: () => currentSettings?.flow === 'scrolled',
+  isScrolled: () => currentSettings?.flow === "scrolled",
   isAtEnd: () => view?.renderer?.atEnd === true,
   viewportHeight: () => window.innerHeight,
-  onStopped: () => post({ type: 'autoReadStopped' }),
+  onStopped: () => post({ type: "autoReadStopped" }),
 });
-document.addEventListener('visibilitychange', () => { if (document.hidden) autoReader.stop(true); });
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) autoReader.stop(true);
+});
 
 function post(message) {
   try {
@@ -46,8 +69,76 @@ function post(message) {
   }
 }
 
+function postPages() {
+  const r = view?.renderer;
+  const index = r?.getContents?.()[0]?.index;
+  if (!r || index == null || r.scrolled || !(r.pages > 2)) {
+    post({ type: "pages", current: null, total: null, wholeBook: false });
+    return;
+  }
+  const chapterPage = Math.max(1, Math.min(r.pages - 2, r.page));
+  const full =
+    pageCounter && pagePosition(pageCounter.counts, index, chapterPage);
+  post({
+    type: "pages",
+    ...(full ?? { current: chapterPage, total: r.pages - 2 }),
+    wholeBook: !!full,
+  });
+}
+
+function schedulePageCounter() {
+  const r = view?.renderer;
+  if (!r || r.scrolled) {
+    pageCounter?.destroy();
+    pageCounter = null;
+    pageCounterKey = null;
+    clearTimeout(pageCounterTimer);
+    postPages();
+    return;
+  }
+  const rect = r.getBoundingClientRect();
+  const metricKeys = [
+    "fontSize",
+    "lineHeight",
+    "fontFamily",
+    "fontWeight",
+    "paragraphSpacing",
+    "letterSpacing",
+    "paragraphIndent",
+    "sidePadding",
+    "maxColumnCount",
+    "gap",
+    "maxInlineSize",
+    "maxBlockSize",
+    "justify",
+    "hyphenate",
+    "flow",
+  ];
+  const key = JSON.stringify([
+    metricKeys.map((key) => currentSettings?.[key]),
+    fontFaces,
+    rect.width,
+    rect.height,
+  ]);
+  if (pageCounterKey === key) return;
+  pageCounterKey = key;
+  pageCounter?.destroy();
+  pageCounter = null;
+  clearTimeout(pageCounterTimer);
+  postPages();
+  pageCounterTimer = setTimeout(() => {
+    pageCounter = createPageCounter({
+      book: view.book,
+      renderer: r,
+      styles: () => generateCSS(currentSettings),
+      prepare: (doc) => prepareSectionFonts(doc, currentSettings, fontFaces),
+      onChange: postPages,
+    });
+  }, 500);
+}
+
 function postError(message) {
-  post({ type: 'error', message: String(message ?? 'Reader error') });
+  post({ type: "error", message: String(message ?? "Reader error") });
 }
 
 /* ------------------------------------------------------------------ themes */
@@ -140,6 +231,10 @@ function applyStyles(settings) {
     ...(settings ?? currentSettings ?? {}),
   };
   const s = currentSettings;
+  chapterHeader.hidden = !s.showReadingStatus;
+  chapterHeader.style.color = (
+    s.isDark ? themeFor(s.themeName).dark : themeFor(s.themeName).light
+  ).fg;
   const theme = themeFor(s.themeName);
   const paper = (s.isDark ? theme.dark : theme.light).bg;
   const background = paperBackground(s.backgroundStyle, paper);
@@ -149,7 +244,8 @@ function applyStyles(settings) {
   view.style.backgroundImage = background.image;
   const r = view.renderer;
   if (!r) return;
-  r.prepareDocument = (doc) => prepareSectionFonts(doc, currentSettings, fontFaces);
+  r.prepareDocument = (doc) =>
+    prepareSectionFonts(doc, currentSettings, fontFaces);
   const attr = (name, value) => {
     if (r.getAttribute(name) !== value) r.setAttribute(name, value);
   };
@@ -172,7 +268,7 @@ function applyStyles(settings) {
 function serializeToc(items) {
   if (!Array.isArray(items)) return [];
   return items.map((it) => ({
-    label: typeof it?.label === 'string' ? it.label.trim() : '',
+    label: typeof it?.label === "string" ? it.label.trim() : "",
     href: it?.href ?? null,
     subitems: serializeToc(it?.subitems),
   }));
@@ -186,83 +282,86 @@ const annotationStyles = new Map();
 let lastAnnotationHitAt = 0;
 
 function createSVG(tag) {
-  return document.createElementNS('http://www.w3.org/2000/svg', tag);
+  return document.createElementNS("http://www.w3.org/2000/svg", tag);
 }
 
 function getDrawFunction(style) {
   switch (style) {
-    case 'underline':
-      return (rects, { color = 'red' } = {}) => {
-        const g = createSVG('g');
-        g.setAttribute('fill', color);
+    case "underline":
+      return (rects, { color = "red" } = {}) => {
+        const g = createSVG("g");
+        g.setAttribute("fill", color);
         for (const { left, bottom, width } of Array.from(rects)) {
-          const el = createSVG('rect');
-          el.setAttribute('x', String(left));
-          el.setAttribute('y', String(bottom - 2));
-          el.setAttribute('height', '2');
-          el.setAttribute('width', String(width));
+          const el = createSVG("rect");
+          el.setAttribute("x", String(left));
+          el.setAttribute("y", String(bottom - 2));
+          el.setAttribute("height", "2");
+          el.setAttribute("width", String(width));
           g.append(el);
         }
         return g;
       };
-    case 'strikethrough':
-      return (rects, { color = 'red' } = {}) => {
-        const g = createSVG('g');
-        g.setAttribute('fill', color);
+    case "strikethrough":
+      return (rects, { color = "red" } = {}) => {
+        const g = createSVG("g");
+        g.setAttribute("fill", color);
         for (const { left, top, bottom, width } of Array.from(rects)) {
-          const el = createSVG('rect');
-          el.setAttribute('x', String(left));
-          el.setAttribute('y', String((top + bottom) / 2));
-          el.setAttribute('height', '2');
-          el.setAttribute('width', String(width));
+          const el = createSVG("rect");
+          el.setAttribute("x", String(left));
+          el.setAttribute("y", String((top + bottom) / 2));
+          el.setAttribute("height", "2");
+          el.setAttribute("width", String(width));
           g.append(el);
         }
         return g;
       };
-    case 'invert':
-      return (rects, { color = '#FFFFFF' } = {}) => {
-        const g = createSVG('g');
-        g.setAttribute('fill', color);
-        g.style.mixBlendMode = 'difference';
+    case "invert":
+      return (rects, { color = "#FFFFFF" } = {}) => {
+        const g = createSVG("g");
+        g.setAttribute("fill", color);
+        g.style.mixBlendMode = "difference";
         for (const { left, top, height, width } of Array.from(rects)) {
-          const el = createSVG('rect');
-          el.setAttribute('x', String(left));
-          el.setAttribute('y', String(top));
-          el.setAttribute('height', String(height));
-          el.setAttribute('width', String(width));
+          const el = createSVG("rect");
+          el.setAttribute("x", String(left));
+          el.setAttribute("y", String(top));
+          el.setAttribute("height", String(height));
+          el.setAttribute("width", String(width));
           g.append(el);
         }
         return g;
       };
-    case 'squiggly':
-      return (rects, { color = 'red' } = {}) => {
-        const g = createSVG('g');
-        g.setAttribute('fill', 'none');
-        g.setAttribute('stroke', color);
-        g.setAttribute('stroke-width', '2');
+    case "squiggly":
+      return (rects, { color = "red" } = {}) => {
+        const g = createSVG("g");
+        g.setAttribute("fill", "none");
+        g.setAttribute("stroke", color);
+        g.setAttribute("stroke-width", "2");
         const block = 3;
         for (const { left, bottom, width } of Array.from(rects)) {
-          const el = createSVG('path');
+          const el = createSVG("path");
           const n = Math.max(1, Math.round(width / block / 1.5));
           const inline = width / n;
-          const ls = Array.from({ length: n }, (_, i) => `l${inline} ${i % 2 ? block : -block}`).join('');
-          el.setAttribute('d', `M${left} ${bottom}${ls}`);
+          const ls = Array.from(
+            { length: n },
+            (_, i) => `l${inline} ${i % 2 ? block : -block}`,
+          ).join("");
+          el.setAttribute("d", `M${left} ${bottom}${ls}`);
           g.append(el);
         }
         return g;
       };
     default:
-      return (rects, { color = 'yellow' } = {}) => {
-        const g = createSVG('g');
-        g.setAttribute('fill', color);
-        g.style.opacity = '0.3';
-        g.style.mixBlendMode = 'multiply';
+      return (rects, { color = "yellow" } = {}) => {
+        const g = createSVG("g");
+        g.setAttribute("fill", color);
+        g.style.opacity = "0.3";
+        g.style.mixBlendMode = "multiply";
         for (const { left, top, height, width } of Array.from(rects)) {
-          const el = createSVG('rect');
-          el.setAttribute('x', String(left));
-          el.setAttribute('y', String(top));
-          el.setAttribute('height', String(height));
-          el.setAttribute('width', String(width));
+          const el = createSVG("rect");
+          el.setAttribute("x", String(left));
+          el.setAttribute("y", String(top));
+          el.setAttribute("height", String(height));
+          el.setAttribute("width", String(width));
           g.append(el);
         }
         return g;
@@ -293,7 +392,8 @@ function setAnnotations(items) {
   for (const [cfi, st] of next) {
     const prev = annotationStyles.get(cfi);
     annotationStyles.set(cfi, st);
-    if (!prev || prev.color !== st.color || prev.style !== st.style) void drawAnnotation(cfi);
+    if (!prev || prev.color !== st.color || prev.style !== st.style)
+      void drawAnnotation(cfi);
   }
 }
 
@@ -310,7 +410,7 @@ async function runSearch(query) {
     /* nothing drawn yet */
   }
   if (!view || !query) {
-    post({ type: 'searchDone', total: 0, capped: false });
+    post({ type: "searchDone", total: 0, capped: false });
     return;
   }
   let total = 0;
@@ -318,28 +418,28 @@ async function runSearch(query) {
   try {
     for await (const r of view.search({ query })) {
       if (token !== searchToken) return;
-      if (r === 'done') break;
+      if (r === "done") break;
       if (r.subitems) {
         const items = r.subitems.map((s) => ({
           cfi: s.cfi,
-          pre: s.excerpt?.pre ?? '',
-          match: s.excerpt?.match ?? '',
-          post: s.excerpt?.post ?? '',
+          pre: s.excerpt?.pre ?? "",
+          match: s.excerpt?.match ?? "",
+          post: s.excerpt?.post ?? "",
         }));
         total += items.length;
-        post({ type: 'searchResults', label: r.label ?? '', items });
+        post({ type: "searchResults", label: r.label ?? "", items });
         if (total >= SEARCH_MAX_RESULTS) {
           capped = true;
           break;
         }
-      } else if (typeof r.progress === 'number') {
-        post({ type: 'searchProgress', progress: r.progress });
+      } else if (typeof r.progress === "number") {
+        post({ type: "searchProgress", progress: r.progress });
       }
     }
   } catch {
     /* a section that fails to parse shouldn't sink the search */
   }
-  if (token === searchToken) post({ type: 'searchDone', total, capped });
+  if (token === searchToken) post({ type: "searchDone", total, capped });
 }
 
 function clearSearch() {
@@ -357,11 +457,17 @@ function viewportRect(range) {
   const r = range.getBoundingClientRect();
   const frame = range.startContainer?.ownerDocument?.defaultView?.frameElement;
   const off = frame ? frame.getBoundingClientRect() : { left: 0, top: 0 };
-  return { left: r.left + off.left, top: r.top + off.top, right: r.right + off.left, bottom: r.bottom + off.top };
+  return {
+    left: r.left + off.left,
+    top: r.top + off.top,
+    right: r.right + off.left,
+    bottom: r.bottom + off.top,
+  };
 }
 
 function clearSelection() {
-  for (const c of view?.renderer?.getContents?.() ?? []) c.doc?.getSelection?.()?.removeAllRanges();
+  for (const c of view?.renderer?.getContents?.() ?? [])
+    c.doc?.getSelection?.()?.removeAllRanges();
 }
 
 /**
@@ -373,7 +479,7 @@ function attachDocHandlers(doc, index) {
   let selectionTimer = null;
 
   doc.addEventListener(
-    'pointerdown',
+    "pointerdown",
     () => {
       autoReader.stop(true);
       const sel = doc.getSelection();
@@ -382,13 +488,13 @@ function attachDocHandlers(doc, index) {
     true,
   );
 
-  doc.addEventListener('click', (e) => {
+  doc.addEventListener("click", (e) => {
     // A tap that merely dismissed an existing selection must not also turn the page.
     if (selectionAtPointerDown) {
       selectionAtPointerDown = false;
       return;
     }
-    if (e.target?.closest?.('a[href]')) return;
+    if (e.target?.closest?.("a[href]")) return;
     const sel = doc.getSelection();
     if (sel && !sel.isCollapsed) return;
     const frame = doc.defaultView?.frameElement;
@@ -397,16 +503,16 @@ function attachDocHandlers(doc, index) {
     // Foliate's own click listener reports taps on highlights; give it a tick to run first.
     setTimeout(() => {
       if (performance.now() - lastAnnotationHitAt < 50) return;
-      post({ type: 'tap', x });
+      post({ type: "tap", x });
     }, 0);
   });
 
-  doc.addEventListener('selectionchange', () => {
+  doc.addEventListener("selectionchange", () => {
     clearTimeout(selectionTimer);
     selectionTimer = setTimeout(() => {
       const sel = doc.getSelection();
       if (!sel || sel.isCollapsed || sel.rangeCount === 0) {
-        post({ type: 'selectionCleared' });
+        post({ type: "selectionCleared" });
         return;
       }
       const range = sel.getRangeAt(0);
@@ -418,7 +524,7 @@ function attachDocHandlers(doc, index) {
       } catch {
         cfi = null;
       }
-      post({ type: 'selection', text, cfi, rect: viewportRect(range) });
+      post({ type: "selection", text, cfi, rect: viewportRect(range) });
     }, 300);
   });
 }
@@ -426,28 +532,33 @@ function attachDocHandlers(doc, index) {
 /* ----------------------------------------------------------- create view */
 function createView() {
   if (view) return view;
-  view = document.createElement('foliate-view');
-  view.setAttribute('id', 'foliate');
-  view.style.cssText = 'width:100%;height:100%;display:block;';
+  view = document.createElement("foliate-view");
+  view.setAttribute("id", "foliate");
+  view.style.cssText = "width:100%;height:100%;display:block;";
   container.appendChild(view);
   new ResizeObserver(() => {
+    schedulePageCounter();
     if (view?.renderer && currentSettings) {
-      applySidePadding(view.renderer, currentSettings.sidePadding, view.clientWidth);
+      applySidePadding(
+        view.renderer,
+        currentSettings.sidePadding,
+        view.clientWidth,
+      );
     }
   }).observe(view);
 
-  view.addEventListener('load', () => {
+  view.addEventListener("load", () => {
     // The paginator swaps its internal view in a microtask after 'load'; defer so
     // setStyles targets the freshly loaded section (mirrors useFoliate.ts).
     setTimeout(() => applyStyles(currentSettings), 0);
   });
 
-  view.addEventListener('load', (e) => {
+  view.addEventListener("load", (e) => {
     const { doc, index } = e.detail ?? {};
     if (doc) attachDocHandlers(doc, index);
   });
 
-  view.addEventListener('draw-annotation', (e) => {
+  view.addEventListener("draw-annotation", (e) => {
     const { draw, annotation } = e.detail ?? {};
     const st = annotationStyles.get(annotation?.value);
     if (!draw || !st) return;
@@ -455,24 +566,32 @@ function createView() {
   });
 
   // A section's overlay is rebuilt each time it loads, so redraw everything that belongs to it.
-  view.addEventListener('create-overlay', () => {
+  view.addEventListener("create-overlay", () => {
     setTimeout(() => {
       for (const cfi of annotationStyles.keys()) void drawAnnotation(cfi);
     }, 100);
   });
 
-  view.addEventListener('show-annotation', (e) => {
+  view.addEventListener("show-annotation", (e) => {
     lastAnnotationHitAt = performance.now();
     const range = e.detail?.range;
-    post({ type: 'annotationTap', cfi: e.detail?.value ?? null, rect: range ? viewportRect(range) : null });
+    post({
+      type: "annotationTap",
+      cfi: e.detail?.value ?? null,
+      rect: range ? viewportRect(range) : null,
+    });
   });
 
-  view.addEventListener('relocate', (e) => {
+  view.addEventListener("relocate", (e) => {
     const d = e.detail ?? {};
+    chapterHeader.textContent =
+      d.tocItem?.label ?? view.book?.metadata?.title ?? "";
+    postPages();
+    schedulePageCounter();
     post({
-      type: 'relocate',
+      type: "relocate",
       cfi: d.cfi ?? null,
-      fraction: typeof d.fraction === 'number' ? d.fraction : null,
+      fraction: typeof d.fraction === "number" ? d.fraction : null,
       chapterTitle: d.tocItem?.label ?? null,
       chapterHref: d.tocItem?.href ?? null,
       atStart: view.renderer?.atStart === true,
@@ -481,8 +600,8 @@ function createView() {
     });
   });
 
-  view.addEventListener('error', (e) => {
-    postError(e.detail?.message ?? 'Reader error');
+  view.addEventListener("error", (e) => {
+    postError(e.detail?.message ?? "Reader error");
   });
 
   return view;
@@ -577,11 +696,15 @@ async function turnPage(next) {
 window.__readerBegin = (metaJson) => {
   try {
     pending = { meta: JSON.parse(metaJson), parts: [] };
-    fontFaces = Array.isArray(pending.meta.fontFaces) ? pending.meta.fontFaces : [];
-    if (pending.meta.settings) currentSettings = { ...DEFAULT_SETTINGS, ...pending.meta.settings };
-    if (pending.meta.settings) currentSettings = { ...DEFAULT_SETTINGS, ...pending.meta.settings };
+    fontFaces = Array.isArray(pending.meta.fontFaces)
+      ? pending.meta.fontFaces
+      : [];
+    if (pending.meta.settings)
+      currentSettings = { ...DEFAULT_SETTINGS, ...pending.meta.settings };
+    if (pending.meta.settings)
+      currentSettings = { ...DEFAULT_SETTINGS, ...pending.meta.settings };
   } catch (e) {
-    postError(e?.message ?? 'Bad open payload');
+    postError(e?.message ?? "Bad open payload");
   }
 };
 
@@ -591,7 +714,7 @@ window.__readerChunk = (b64) => {
   try {
     pending.parts.push(b64ToBytes(b64));
   } catch (e) {
-    postError(e?.message ?? 'Bad chunk');
+    postError(e?.message ?? "Bad chunk");
   }
 };
 
@@ -613,55 +736,55 @@ window.__readerCommand = (json) => {
     return;
   }
   switch (cmd.type) {
-    case 'goTo':
+    case "goTo":
       void view.goTo(cmd.target).catch(() => {});
       break;
-    case 'goToFraction':
-      if (typeof view.goToFraction === 'function') view.goToFraction(cmd.value);
+    case "goToFraction":
+      if (typeof view.goToFraction === "function") view.goToFraction(cmd.value);
       break;
-    case 'restorePage':
+    case "restorePage":
       void (async () => {
         try {
           if (cmd.cfi) await view.goTo(cmd.cfi);
           else await view.goToFraction(cmd.fraction ?? 0);
         } finally {
-          post({ type: 'pageTurnCompleted' });
+          post({ type: "pageTurnCompleted" });
         }
       })();
       break;
-    case 'previousChapter':
+    case "previousChapter":
       view.renderer?.prevSection?.();
       break;
-    case 'nextChapter':
+    case "nextChapter":
       view.renderer?.nextSection?.();
       break;
-    case 'autoRead':
+    case "autoRead":
       if (cmd.running) autoReader.start(cmd.seconds);
       else autoReader.stop();
       break;
-    case 'prev':
+    case "prev":
       void turnPage(false);
       break;
-    case 'next':
+    case "next":
       void turnPage(true);
       break;
-    case 'setFonts':
+    case "setFonts":
       fontFaces = Array.isArray(cmd.faces) ? cmd.faces : [];
       applyStyles(currentSettings);
       break;
-    case 'applyStyles':
+    case "applyStyles":
       applyStyles(cmd.settings);
       break;
-    case 'setAnnotations':
+    case "setAnnotations":
       setAnnotations(cmd.items);
       break;
-    case 'clearSelection':
+    case "clearSelection":
       clearSelection();
       break;
-    case 'search':
-      void runSearch(String(cmd.query ?? ''));
+    case "search":
+      void runSearch(String(cmd.query ?? ""));
       break;
-    case 'clearSearch':
+    case "clearSearch":
       clearSearch();
       break;
     default:
@@ -669,4 +792,4 @@ window.__readerCommand = (json) => {
   }
 };
 
-post({ type: 'ready' });
+post({ type: "ready" });

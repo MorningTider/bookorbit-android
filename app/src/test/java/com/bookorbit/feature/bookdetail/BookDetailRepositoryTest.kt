@@ -1,12 +1,13 @@
 package com.bookorbit.feature.bookdetail
 
+import com.bookorbit.core.db.ReaderProgressEntity
+import com.bookorbit.core.model.BookFileProgress
 import com.bookorbit.core.db.PendingRatingDao
 import com.bookorbit.core.db.PendingRatingEntity
 import com.bookorbit.core.db.PendingReadStatusDao
 import com.bookorbit.core.db.PendingReadStatusEntity
 import com.bookorbit.core.model.BookDetail
 import com.bookorbit.core.model.SetRatingRequest
-import com.bookorbit.core.model.SetReadStatusRequest
 import com.bookorbit.core.model.UserBookStatus
 import com.bookorbit.core.network.ApiService
 import com.bookorbit.core.sync.SyncScheduler
@@ -46,7 +47,13 @@ class BookDetailRepositoryTest {
         pendingRatingDao = mockk(relaxed = true)
         pendingReadStatusDao = mockk(relaxed = true)
         syncScheduler = mockk(relaxed = true)
-        repo = BookDetailRepository(api, pendingRatingDao, pendingReadStatusDao, syncScheduler)
+        repo = BookDetailRepository(
+            api,
+            pendingRatingDao,
+            pendingReadStatusDao,
+            syncScheduler,
+            mockk(relaxed = true),
+        )
     }
 
     @Test
@@ -127,7 +134,12 @@ class BookDetailRepositoryTest {
     fun `applyPending overlays a queued status onto an existing status, preserving other fields`() = runTest {
         coEvery { pendingRatingDao.get(1) } returns null
         coEvery { pendingReadStatusDao.get(1) } returns PendingReadStatusEntity(1, "read", 100L)
-        val existing = UserBookStatus(status = "reading", source = "server", startedAt = "2024-01-01", updatedAt = "2024-01-02")
+        val existing = UserBookStatus(
+            status = "reading",
+            source = "server",
+            startedAt = "2024-01-01",
+            updatedAt = "2024-01-02",
+        )
 
         val result = repo.applyPending(book(readStatus = existing))
 
@@ -169,5 +181,22 @@ class BookDetailRepositoryTest {
         val stillPending = repo.flushPendingRatings()
 
         assertEquals(false, stillPending)
+    }
+
+    @Test
+    fun `pending checkpoint appears immediately but acknowledged old local rows yield to web edits`() {
+        val remote = listOf(BookFileProgress(10, 15.6))
+        val dirty = ReaderProgressEntity(10, "next", 22.7, 500, true)
+        assertEquals(22.7, repo.displayedProgress(remote, listOf(dirty), mapOf(10 to dirty))[10]!!, .001)
+        assertEquals(
+            15.6,
+            repo.displayedProgress(remote, listOf(dirty.copy(dirty = false)), mapOf(10 to dirty.copy(dirty = false)))[10]!!,
+            .001,
+        )
+        assertEquals(
+            22.7,
+            repo.displayedProgress(remote, listOf(dirty.copy(dirty = false)), mapOf(10 to dirty))[10]!!,
+            .001,
+        )
     }
 }

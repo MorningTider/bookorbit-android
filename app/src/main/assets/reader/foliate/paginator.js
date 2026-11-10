@@ -1,4 +1,4 @@
-const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+import { createSectionCache } from '../reader-section-cache.js'
 
 const debounce = (f, wait, immediate) => {
   let timeout
@@ -262,6 +262,8 @@ class View {
         async () => {
           try {
             const doc = this.document
+            // Layout and request all document fonts while its outer view is still hidden.
+            this.#iframe.style.display = 'block'
             await afterLoad?.(doc)
 
             // it needs to be visible for Firefox to get computed style
@@ -371,6 +373,7 @@ class View {
     }
   }
   expand() {
+    if (!this.#size && this.#column) return
     const { documentElement } = this.document
     if (this.#column) {
       const side = this.#vertical ? 'height' : 'width'
@@ -449,6 +452,8 @@ export class Paginator extends HTMLElement {
   #justAnchored = false
   #locked = false // while true, prevent any further navigation
   #styles
+  #sectionCache
+  #cancelPreload
   #styleMap = new WeakMap()
   #mediaQuery = matchMedia('(prefers-color-scheme: dark)')
   #mediaQueryListener
@@ -655,10 +660,14 @@ export class Paginator extends HTMLElement {
         break
     }
   }
+  #transformCleanup
   open(book) {
+    this.#transformCleanup?.()
+    this.#sectionCache?.destroy()
+    this.#sectionCache = createSectionCache(book.sections)
     this.bookDir = book.dir
     this.sections = book.sections
-    book.transformTarget?.addEventListener('data', ({ detail }) => {
+    const transform = ({ detail }) => {
       if (detail.type !== 'text/css') return
       const w = innerWidth
       const h = innerHeight
@@ -673,7 +682,9 @@ export class Paginator extends HTMLElement {
           .replace(/page-break-(after|before|inside)\s*:/gi, (_, x) => `-webkit-column-break-${x}:`)
           .replace(/break-(after|before|inside)\s*:\s*(avoid-)?page/gi, (_, x, y) => `break-${x}: ${y ?? ''}column`),
       )
-    })
+    }
+    book.transformTarget?.addEventListener('data', transform)
+    this.#transformCleanup = () => book.transformTarget?.removeEventListener('data', transform)
   }
   #createView() {
     if (this.#view) {
@@ -684,6 +695,7 @@ export class Paginator extends HTMLElement {
       container: this,
       onExpand: () => this.#scrollToAnchor(this.#anchor),
     })
+    this.#view.element.style.visibility = 'hidden'
     this.#container.append(this.#view.element)
     return this.#view
   }
@@ -886,7 +898,10 @@ export class Paginator extends HTMLElement {
       const size = this.viewSize
       const margin = this.#margin
       return this.#vertical
-        ? ({ left, right }) => ({ left: size - right - margin, right: size - left - margin })
+        ? ({ left, right }) => ({
+            left: size - right - margin,
+            right: size - left - margin,
+          })
         : ({ top, bottom }) => ({ left: top + margin, right: bottom + margin })
     }
     const pxSize = this.pages * this.size
@@ -1023,7 +1038,28 @@ export class Paginator extends HTMLElement {
       this.#view = view
     }
     await this.scrollToAnchor((typeof anchor === 'function' ? anchor(this.#view.document) : anchor) ?? 0, select)
+    if (src) {
+      await new Promise(requestAnimationFrame)
+      this.#view.element.style.visibility = 'visible'
+      this.#preloadAdjacent()
+    }
     if (hasFocus) this.focusView()
+  }
+  #preloadAdjacent() {
+    if (this.hasAttribute('no-preload')) return
+    this.#cancelPreload?.()
+    const index = this.#index
+    const warm = () => {
+      this.#cancelPreload = null
+      if (this.#index === index) this.#sectionCache.warm([this.#adjacentIndex(1), this.#adjacentIndex(-1)])
+    }
+    if (globalThis.requestIdleCallback) {
+      const id = requestIdleCallback(warm, { timeout: 500 })
+      this.#cancelPreload = () => cancelIdleCallback(id)
+    } else {
+      const id = setTimeout(warm, 80)
+      this.#cancelPreload = () => clearTimeout(id)
+    }
   }
   #canGoToIndex(index) {
     return index >= 0 && index <= this.sections.length - 1
@@ -1038,7 +1074,8 @@ export class Paginator extends HTMLElement {
         this.dispatchEvent(new CustomEvent('load', { detail }))
       }
       await this.#display(
-        Promise.resolve(this.sections[index].load())
+        this.#sectionCache
+          .take(index)
           .then((src) => {
             if (!src) throw new Error(`Failed to load section ${index}`)
             return { index, src, anchor, onLoad, select }
@@ -1052,9 +1089,15 @@ export class Paginator extends HTMLElement {
     }
   }
   async goTo(target) {
-    if (this.#locked) return
-    const resolved = await target
-    if (this.#canGoToIndex(resolved.index)) return this.#goTo(resolved)
+    // Explicit seeks must wait for the in-flight chapter instead of silently disappearing.
+    while (this.#locked) await new Promise(requestAnimationFrame)
+    this.#locked = true
+    try {
+      const resolved = await target
+      if (this.#canGoToIndex(resolved.index)) return await this.#goTo(resolved)
+    } finally {
+      this.#locked = false
+    }
   }
   #scrollPrev(distance) {
     if (!this.#view) return true
@@ -1089,15 +1132,17 @@ export class Paginator extends HTMLElement {
   async #turnPage(dir, distance) {
     if (this.#locked) return
     this.#locked = true
-    const prev = dir === -1
-    const shouldGo = await (prev ? this.#scrollPrev(distance) : this.#scrollNext(distance))
-    if (shouldGo)
-      await this.#goTo({
-        index: this.#adjacentIndex(dir),
-        anchor: prev ? () => 1 : () => 0,
-      })
-    if (shouldGo || !this.hasAttribute('animated')) await wait(100)
-    this.#locked = false
+    try {
+      const prev = dir === -1
+      const shouldGo = await (prev ? this.#scrollPrev(distance) : this.#scrollNext(distance))
+      if (shouldGo)
+        await this.#goTo({
+          index: this.#adjacentIndex(dir),
+          anchor: prev ? () => 1 : () => 0,
+        })
+    } finally {
+      this.#locked = false
+    }
   }
   prev(distance) {
     return this.#turnPage(-1, distance)
@@ -1145,14 +1190,17 @@ export class Paginator extends HTMLElement {
     requestAnimationFrame(() => (this.#background.style.background = getBackground(this.#view.document)))
 
     // needed because the resize observer doesn't work in Firefox
-    this.#view?.document?.fonts?.ready?.then(() => this.#view.expand())
+    this.#view?.document?.fonts?.ready?.then(() => this.#view?.expand())
   }
   focusView() {
     this.#view.document.defaultView.focus()
   }
   destroy() {
+    this.#transformCleanup?.()
+    this.#cancelPreload?.()
+    this.#sectionCache?.destroy()
     this.#observer.unobserve(this)
-    this.#view.destroy()
+    this.#view?.destroy()
     this.#view = null
     this.sections[this.#index]?.unload?.()
     this.#mediaQuery.removeEventListener('change', this.#mediaQueryListener)

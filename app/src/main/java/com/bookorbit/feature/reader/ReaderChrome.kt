@@ -59,9 +59,15 @@ fun ReaderChrome(
     onSeek: (Double) -> Unit,
     onPreviousChapter: () -> Unit,
     onNextChapter: () -> Unit,
+    precisePercentage: Double = percentage.toDouble(),
+    elapsedSeconds: Long = 0,
+    remainingSeconds: Long? = null,
+    onReview: () -> Unit = {},
+    onChapterComment: () -> Unit = {},
+    chapterAvailable: Boolean = true,
 ) {
     var seeking by remember { mutableStateOf<Float?>(null) }
-    val fraction = seeking ?: (percentage / 100f)
+    val fraction = seeking ?: (precisePercentage / 100).toFloat()
     ReaderAppearance(settings) {
         Box(Modifier.fillMaxSize()) {
             Surface(Modifier.fillMaxWidth().align(Alignment.TopCenter), shadowElevation = 0.dp) {
@@ -101,6 +107,29 @@ fun ReaderChrome(
                 Column(
                     Modifier.navigationBarsPadding().padding(horizontal = 12.dp, vertical = 8.dp)
                 ) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                        TextButton(onClick = onReview) {
+                            Text(stringResource(R.string.comments_reviews))
+                        }
+                        TextButton(
+                            onClick = onChapterComment,
+                            enabled = loaded && chapterAvailable,
+                        ) {
+                            Text(stringResource(R.string.comments_chapter))
+                        }
+                    }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text(
+                            stringResource(R.string.rs_elapsed_minutes, elapsedSeconds / 60),
+                            style = MaterialTheme.typography.labelSmall,
+                        )
+                        Text(
+                            remainingSeconds?.let {
+                                stringResource(R.string.rs_remaining_minutes, (it + 59) / 60)
+                            } ?: stringResource(R.string.rs_pace_pending),
+                            style = MaterialTheme.typography.labelSmall,
+                        )
+                    }
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         TextButton(
                             onClick = onPreviousChapter,
@@ -125,7 +154,7 @@ fun ReaderChrome(
                         }
                     }
                     Text(
-                        "${(fraction * 100).toInt()}%",
+                        "${com.bookorbit.core.model.readingPercentage(seeking?.let { it.toDouble() * 100 } ?: precisePercentage)}%",
                         modifier = Modifier.align(Alignment.CenterHorizontally),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,

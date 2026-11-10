@@ -3,8 +3,8 @@ package com.bookorbit.feature.reader
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonArray
@@ -15,10 +15,10 @@ import kotlinx.serialization.json.jsonPrimitive
  * Message protocol between the host and the in-WebView foliate bridge (assets/reader/bridge.js).
  *
  * Host -> WebView: JS strings run via WebView.evaluateJavascript invoking globals the bridge
- * installs (__readerBegin/__readerChunk/__readerCommit/__readerCommand). Arguments are double-encoded
- * (a JSON string passed as a JS string literal).
- * WebView -> host: JSON strings posted through window.ReactNativeWebView.postMessage (shimmed onto the
- * AndroidReaderBridge JS interface in index.html).
+ * installs (__readerBegin/__readerChunk/__readerCommit/__readerCommand). Arguments are
+ * double-encoded (a JSON string passed as a JS string literal). WebView -> host: JSON strings
+ * posted through window.ReactNativeWebView.postMessage (shimmed onto the AndroidReaderBridge JS
+ * interface in index.html).
  */
 @Serializable
 data class TocItem(
@@ -27,7 +27,9 @@ data class TocItem(
     val subitems: List<TocItem> = emptyList(),
 )
 
-/** A box in the WebView's own coordinate space; CSS px equal dp, so it can be used as dp directly. */
+/**
+ * A box in the WebView's own coordinate space; CSS px equal dp, so it can be used as dp directly.
+ */
 data class ViewportRect(val left: Double, val top: Double, val right: Double, val bottom: Double)
 
 /** One in-book search match, with the text around it. */
@@ -44,6 +46,8 @@ sealed interface ReaderEvent {
         val atStart: Boolean = false,
         val atEnd: Boolean = false,
     ) : ReaderEvent
+
+    data class Pages(val current: Int?, val total: Int?, val wholeBook: Boolean) : ReaderEvent
     data object AutoReadStopped : ReaderEvent
     data object PageTurnRequested : ReaderEvent
     data object PageTurnCompleted : ReaderEvent
@@ -99,7 +103,8 @@ object ReaderBridge {
             "ready" -> ReaderEvent.Ready
             "loaded" -> {
                 val toc = obj["toc"]?.let {
-                    runCatching { json.decodeFromJsonElement(kotlinx.serialization.builtins.ListSerializer(TocItem.serializer()), it) }
+                    runCatching { json.decodeFromJsonElement(kotlinx.serialization.builtins.ListSerializer(TocItem.serializer()), it,
+                                        ) }
                         .getOrDefault(emptyList())
                 } ?: emptyList()
                 val title = obj["metadata"]?.jsonObject?.get("title")?.jsonPrimitive?.contentOrNull
@@ -113,13 +118,20 @@ object ReaderBridge {
                 atStart = obj["atStart"]?.jsonPrimitive?.booleanOrNull ?: false,
                 atEnd = obj["atEnd"]?.jsonPrimitive?.booleanOrNull ?: false,
             )
-            "autoReadStopped" -> ReaderEvent.AutoReadStopped
+                    "pages" ->
+                        ReaderEvent.Pages(
+                            obj["current"]?.jsonPrimitive?.intOrNull,
+                            obj["total"]?.jsonPrimitive?.intOrNull,
+                            obj["wholeBook"]?.jsonPrimitive?.booleanOrNull ?: false,
+                        )
+                    "autoReadStopped" -> ReaderEvent.AutoReadStopped
             "pageTurnRequested" -> ReaderEvent.PageTurnRequested
             "pageTurnCompleted" -> ReaderEvent.PageTurnCompleted
             "error" -> ReaderEvent.Error(obj["message"]?.jsonPrimitive?.contentOrNull ?: "Reader error")
             "tap" -> obj["x"]?.jsonPrimitive?.doubleOrNull?.let { ReaderEvent.Tap(it) }
             "selection" -> obj["text"]?.jsonPrimitive?.contentOrNull?.let {
-                ReaderEvent.Selection(it, obj["cfi"]?.jsonPrimitive?.contentOrNull, parseRect(obj["rect"]))
+                ReaderEvent.Selection(it, obj["cfi"]?.jsonPrimitive?.contentOrNull, parseRect(obj["rect"]),
+                            )
             }
             "selectionCleared" -> ReaderEvent.SelectionCleared
             "searchResults" -> {
@@ -133,7 +145,8 @@ object ReaderBridge {
                         post = o["post"]?.jsonPrimitive?.contentOrNull.orEmpty(),
                     )
                 }.orEmpty()
-                ReaderEvent.SearchResults(obj["label"]?.jsonPrimitive?.contentOrNull.orEmpty(), hits)
+                ReaderEvent.SearchResults(obj["label"]?.jsonPrimitive?.contentOrNull.orEmpty(), hits,
+                        )
             }
             "searchProgress" -> obj["progress"]?.jsonPrimitive?.doubleOrNull?.let { ReaderEvent.SearchProgress(it) }
             "searchDone" -> ReaderEvent.SearchDone(

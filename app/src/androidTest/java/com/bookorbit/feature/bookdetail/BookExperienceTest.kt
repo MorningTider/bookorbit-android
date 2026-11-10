@@ -143,7 +143,7 @@ class BookExperienceTest {
         compose.onNodeWithText("验收作者").performClick()
         compose.runOnIdle { assertEquals(2, openedAuthor) }
         compose
-            .onNodeWithText(compose.activity.getString(R.string.detail_continue_progress, 42))
+            .onNodeWithText(compose.activity.getString(R.string.detail_continue_progress, "42"))
             .performClick()
         compose.runOnIdle { assertEquals(1, read) }
         screenshot("book-overview")

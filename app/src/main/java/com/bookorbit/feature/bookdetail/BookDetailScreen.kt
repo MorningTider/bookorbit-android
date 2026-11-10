@@ -1,8 +1,5 @@
 package com.bookorbit.feature.bookdetail
 
-import androidx.compose.ui.res.pluralStringResource
-import androidx.compose.ui.res.stringResource
-import com.bookorbit.R
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
@@ -21,28 +18,19 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import com.bookorbit.ui.components.htmlToAnnotatedString
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material.icons.filled.Book
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Headset
 import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material3.Button
-import com.bookorbit.feature.reader.highlightColor
-import com.bookorbit.core.model.BookAnnotation
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.material3.TabRow
-import androidx.compose.material3.Tab
-import androidx.compose.foundation.layout.width
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -51,12 +39,15 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -64,18 +55,25 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.core.content.ContextCompat
+import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
+import com.bookorbit.R
+import com.bookorbit.core.model.BookAnnotation
 import com.bookorbit.core.model.BookDetail
 import com.bookorbit.core.model.BookFiles
+import com.bookorbit.feature.reader.highlightColor
 import com.bookorbit.ui.LocalImageUrls
 import com.bookorbit.ui.components.RecommendationScroller
 import com.bookorbit.ui.components.StarRating
+import com.bookorbit.ui.components.htmlToAnnotatedString
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -99,11 +97,11 @@ fun BookDetailScreen(
     var collectionSheet by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission(),
-    ) { vm.startDownload() }
+        ActivityResultContracts.RequestPermission()) { vm.startDownload() }
     val startDownload = {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS,
+                ) != PackageManager.PERMISSION_GRANTED
         ) {
             notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
         } else {
@@ -127,7 +125,8 @@ fun BookDetailScreen(
                 },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.back))
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.back),
+                        )
                     }
                 },
             )
@@ -138,7 +137,8 @@ fun BookDetailScreen(
                 ui.loading -> Box(Modifier.fillMaxSize(), Alignment.Center) { CircularProgressIndicator() }
                 ui.error || ui.book == null -> Box(Modifier.fillMaxSize(), Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(stringResource(R.string.failed_to_load_book_details), color = MaterialTheme.colorScheme.error)
+                        Text(stringResource(R.string.failed_to_load_book_details), color = MaterialTheme.colorScheme.error,
+                            )
                         Button(onClick = vm::load, modifier = Modifier.padding(top = 12.dp)) { Text(stringResource(R.string.retry)) }
                     }
                 }
@@ -192,6 +192,9 @@ private fun BookDetailContent(
     onOpenCollectionSheet: () -> Unit,
 ) {
     val uriHandler = LocalUriHandler.current
+    var reviews by remember { mutableStateOf(false) }
+    if (reviews)
+        com.bookorbit.feature.comments.BookCommentsSheet(book.id, onDismiss = { reviews = false })
     val goodreadsId = book.providerIds["goodreads"]
 
     var tab by rememberSaveable { mutableIntStateOf(0) }
@@ -205,6 +208,12 @@ private fun BookDetailContent(
         }
 
         FormatChips(book, ui.fileProgress)
+        androidx.compose.material3.TextButton(
+            onClick = { reviews = true },
+            modifier = Modifier.padding(horizontal = 12.dp),
+        ) {
+            Text(stringResource(R.string.comments_reviews))
+        }
 
         val tabs =
             listOf(
@@ -385,7 +394,9 @@ internal fun DetailReadingBar(
                 ) {
                     Text(
                         if (percentage > 0)
-                            stringResource(R.string.detail_continue_progress, percentage.toInt())
+                            stringResource(R.string.detail_continue_progress,
+                                com.bookorbit.core.model.readingPercentage(percentage),
+                            )
                         else stringResource(R.string.read)
                     )
                 }
@@ -413,8 +424,10 @@ private fun DownloadControl(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Icon(Icons.Filled.CheckCircle, contentDescription = null, tint = com.bookorbit.ui.theme.SuccessGreen)
-            Text(stringResource(R.string.downloaded), color = com.bookorbit.ui.theme.SuccessGreen, modifier = Modifier.weight(1f))
+            Icon(Icons.Filled.CheckCircle, contentDescription = null, tint = com.bookorbit.ui.theme.SuccessGreen,
+                )
+            Text(stringResource(R.string.downloaded), color = com.bookorbit.ui.theme.SuccessGreen, modifier = Modifier.weight(1f),
+                )
             androidx.compose.material3.TextButton(onClick = onRemove) { Text(stringResource(R.string.remove)) }
         }
         "DOWNLOADING" -> Row(
@@ -436,10 +449,12 @@ private fun DownloadControl(
                 modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
             ) {
                 Icon(Icons.Filled.Download, contentDescription = null)
-                Text(stringResource(R.string.retry_download), modifier = Modifier.padding(start = 8.dp))
+                Text(stringResource(R.string.retry_download), modifier = Modifier.padding(start = 8.dp),
+                    )
             }
         }
-        else -> androidx.compose.material3.OutlinedButton(onClick = onStartDownload, modifier = Modifier.fillMaxWidth()) {
+        else -> androidx.compose.material3.OutlinedButton(onClick = onStartDownload, modifier = Modifier.fillMaxWidth(),
+            ) {
             Icon(Icons.Filled.Download, contentDescription = null)
             Text(stringResource(R.string.download), modifier = Modifier.padding(start = 8.dp))
         }
@@ -459,7 +474,9 @@ private fun FormatChips(book: BookDetail, fileProgress: Map<Int, Double>) {
     ) {
         formats.distinctBy { it.format!!.lowercase() }.forEach { file ->
             val pct = fileProgress[file.id]
-            Chip(file.format!!.uppercase() + (pct?.let { " ${it.toInt()}%" } ?: ""), emphasized = pct != null)
+            Chip(file.format!!.uppercase() + (pct?.let { " ${com.bookorbit.core.model.readingPercentage(it)}%" } ?: ""),
+                    emphasized = pct != null,
+                )
         }
     }
 }
@@ -496,8 +513,10 @@ private fun DetailsTab(
                         .padding(vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Icon(Icons.AutoMirrored.Outlined.OpenInNew, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                    Text(stringResource(R.string.view_on_goodreads), modifier = Modifier.padding(start = 10.dp))
+                    Icon(Icons.AutoMirrored.Outlined.OpenInNew, contentDescription = null, tint = MaterialTheme.colorScheme.primary,
+                    )
+                    Text(stringResource(R.string.view_on_goodreads), modifier = Modifier.padding(start = 10.dp),
+                    )
                 }
             }
         }
@@ -510,10 +529,12 @@ private fun DetailsTab(
         }
 
         if (ui.authorBooks.isNotEmpty()) {
-            RecommendationScroller(stringResource(R.string.more_by_this_author), ui.authorBooks, onBookClick = onBookClick)
+            RecommendationScroller(stringResource(R.string.more_by_this_author), ui.authorBooks, onBookClick = onBookClick,
+            )
         }
         if (ui.recommendations.isNotEmpty()) {
-            RecommendationScroller(stringResource(R.string.similar_books), ui.recommendations, onBookClick = onBookClick)
+            RecommendationScroller(stringResource(R.string.similar_books), ui.recommendations, onBookClick = onBookClick,
+            )
         }
     }
 }
@@ -521,7 +542,8 @@ private fun DetailsTab(
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun FlowRowChips(items: List<String>) {
-    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
         items.forEach { Chip(it) }
     }
 }
@@ -542,7 +564,8 @@ private fun ShelfCards(
             shape = RoundedCornerShape(10.dp),
             modifier = Modifier.fillMaxWidth().clickable(onClick = onOpenStatusSheet),
         ) {
-            Row(modifier = Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(modifier = Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically,
+            ) {
                 val meta = book.readStatus?.let { readStatusMeta(it.status) }
                 Icon(
                     meta?.icon ?: Icons.Filled.Book,
@@ -558,19 +581,22 @@ private fun ShelfCards(
                 if (ui.statusUpdating) {
                     CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
                 } else {
-                    Icon(Icons.Filled.KeyboardArrowDown, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Icon(Icons.Filled.KeyboardArrowDown, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             }
         }
 
         if (vm.canRate || book.rating != null) {
-            Surface(color = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(10.dp), modifier = Modifier.fillMaxWidth()) {
+            Surface(color = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(10.dp), modifier = Modifier.fillMaxWidth(),
+            ) {
                 Row(
                     modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
-                    Text(stringResource(R.string.rating), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(stringResource(R.string.rating), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                     StarRating(
                         value = book.rating,
                         onChange = if (vm.canRate) vm::setRating else null,
@@ -587,7 +613,8 @@ private fun ShelfCards(
         ) {
             Text(
                 if (book.collections.isNotEmpty()) {
-                    pluralStringResource(R.plurals.detail_in_collections, book.collections.size, book.collections.size)
+                    pluralStringResource(R.plurals.detail_in_collections, book.collections.size, book.collections.size,
+                    )
                 } else {
                     stringResource(R.string.detail_add_to_collection)
                 },
@@ -608,7 +635,8 @@ private fun ShelfCards(
 private fun FilesTab(book: BookDetail) {
     Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) {
         if (book.files.isEmpty()) {
-            Text(stringResource(R.string.no_files), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(stringResource(R.string.no_files), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
         book.files.forEach { f ->
             Column(Modifier.fillMaxWidth().padding(vertical = 10.dp)) {
@@ -620,7 +648,8 @@ private fun FilesTab(book: BookDetail) {
                         color = MaterialTheme.colorScheme.primary,
                     )
                     if (f.role == "primary") {
-                        Text(" · " + stringResource(R.string.primary), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(" · " + stringResource(R.string.primary), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                     }
                     Box(Modifier.weight(1f))
                     val detail = listOfNotNull(
@@ -628,11 +657,13 @@ private fun FilesTab(book: BookDetail) {
                         f.durationSeconds?.let { formatDuration(it) },
                     ).joinToString(" · ")
                     if (detail.isNotEmpty()) {
-                        Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                     }
                 }
                 f.filename?.let {
-                    Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    )
                 }
             }
             HorizontalDivider()
@@ -658,10 +689,11 @@ private fun HighlightsTab(highlights: List<BookAnnotation>) {
                         .width(4.dp)
                         .height(44.dp)
                         .clip(RoundedCornerShape(2.dp))
-                        .background(highlightColor(a.color)),
+                        .background(highlightColor(a.color))
                 )
                 Column(Modifier.padding(start = 12.dp)) {
-                    Text(a.text, style = MaterialTheme.typography.bodyMedium, maxLines = 4, overflow = TextOverflow.Ellipsis)
+                    Text(a.text, style = MaterialTheme.typography.bodyMedium, maxLines = 4, overflow = TextOverflow.Ellipsis,
+                    )
                     a.note?.takeIf { it.isNotBlank() }?.let {
                         Text(
                             it,
@@ -721,7 +753,8 @@ private fun DetailsSection(book: BookDetail) {
                     .padding(vertical = 10.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
-                Text(label, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(label, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
                 Text(value, style = MaterialTheme.typography.bodyMedium)
             }
             HorizontalDivider()

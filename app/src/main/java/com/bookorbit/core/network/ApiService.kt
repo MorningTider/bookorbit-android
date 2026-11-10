@@ -1,9 +1,9 @@
 package com.bookorbit.core.network
 
 import com.bookorbit.core.model.AppInfo
+import com.bookorbit.core.model.AudioProgress
 import com.bookorbit.core.model.AudiobookManifest
 import com.bookorbit.core.model.AudiobookPlaybackState
-import com.bookorbit.core.model.AudioProgress
 import com.bookorbit.core.model.AuthUser
 import com.bookorbit.core.model.AuthorsPage
 import com.bookorbit.core.model.BookDetail
@@ -20,6 +20,7 @@ import com.bookorbit.core.model.Collection
 import com.bookorbit.core.model.CollectionBookIds
 import com.bookorbit.core.model.CollectionWithMembership
 import com.bookorbit.core.model.FileProgress
+import com.bookorbit.core.model.FinalizeRequest
 import com.bookorbit.core.model.Library
 import com.bookorbit.core.model.LoginRequest
 import com.bookorbit.core.model.LoginResponse
@@ -37,7 +38,6 @@ import com.bookorbit.core.model.SeriesPage
 import com.bookorbit.core.model.SetRatingRequest
 import com.bookorbit.core.model.SetReadStatusRequest
 import com.bookorbit.core.model.SetTargetRequest
-import com.bookorbit.core.model.FinalizeRequest
 import com.bookorbit.core.model.SmartScope
 import com.bookorbit.core.model.UpdateBookDockFileRequest
 import com.bookorbit.core.model.UserBookStatus
@@ -65,6 +65,25 @@ import retrofit2.http.Streaming
  * Endpoints mirror the server's `/api/v1` REST surface one-to-one.
  */
 interface ApiService {
+    @GET("books/{bookId}/comments")
+    suspend fun getBookComments(
+        @Path("bookId") bookId: Int,
+        @Query("scope") scope: String? = null,
+        @Query("bookFileId") bookFileId: Int? = null,
+        @Query("chapterHref") chapterHref: String? = null,
+        @Query("cfi") cfi: String? = null,
+        @Query("threadId") threadId: Int? = null,
+        @Query("before") before: Int? = null,
+    ): com.bookorbit.core.model.BookCommentPage
+
+    @POST("books/{bookId}/comments")
+    suspend fun createBookComment(
+        @Path("bookId") bookId: Int,
+        @Body body: com.bookorbit.core.model.CreateBookComment,
+    ): com.bookorbit.core.model.BookComment
+
+    @DELETE("books/{bookId}/comments/{id}/{action}")
+    suspend fun deleteBookComment(@Path("bookId") bookId: Int, @Path("id") id: Int, @Path("action") action: String = "own")
 
     // --- Auth ---
     @POST("auth/login")
@@ -104,8 +123,7 @@ interface ApiService {
     @PATCH("books/{id}/status")
     suspend fun setReadStatus(
         @Path("id") id: Int,
-        @Body body: SetReadStatusRequest,
-    ): UserBookStatus
+        @Body body: SetReadStatusRequest): UserBookStatus
 
     @POST("books/bulk-set-rating")
     suspend fun setRating(@Body body: SetRatingRequest)
@@ -147,7 +165,8 @@ interface ApiService {
     ): com.bookorbit.core.model.AudiobookBookmark
 
     @DELETE("audiobooks/{bookId}/bookmarks/{bookmarkId}")
-    suspend fun deleteAudiobookBookmark(@Path("bookId") bookId: Int, @Path("bookmarkId") bookmarkId: String)
+    suspend fun deleteAudiobookBookmark(@Path("bookId") bookId: Int, @Path("bookmarkId") bookmarkId: String,
+    )
 
     @GET("cbz/files/{fileId}/pages")
     suspend fun getComicPageCount(@Path("fileId") fileId: Int): com.bookorbit.core.model.ComicPages
@@ -218,8 +237,7 @@ interface ApiService {
     @POST("books/files/{fileId}/progress")
     suspend fun saveFileProgress(
         @Path("fileId") fileId: Int,
-        @Body body: SaveFileProgress,
-    )
+        @Body body: SaveFileProgress)
 
     /**
      * Raw file bytes. Streamed so large files don't buffer in memory. Server 3.0+ 404s this for
@@ -229,7 +247,10 @@ interface ApiService {
     @GET("books/files/{fileId}/serve")
     suspend fun serveFile(@Path("fileId") fileId: Int): ResponseBody
 
-    /** [serveFile] with an optional `Range` (resumable downloads); the full response exposes 206/Content-Range. */
+    /**
+     * [serveFile] with an optional `Range` (resumable downloads); the full response exposes
+     * 206/Content-Range.
+     */
     @Streaming
     @GET("books/files/{fileId}/serve")
     suspend fun serveFileRange(
@@ -281,8 +302,7 @@ interface ApiService {
     @PATCH("books/{id}/audio-progress")
     suspend fun saveAudioProgress(
         @Path("id") id: Int,
-        @Body body: SaveAudioProgress,
-    )
+        @Body body: SaveAudioProgress)
 
     // --- Libraries ---
     @GET("libraries")
@@ -291,8 +311,7 @@ interface ApiService {
     @POST("libraries/{id}/books")
     suspend fun getLibraryBooks(
         @Path("id") id: Int,
-        @Body query: BookQuery,
-    ): BooksPage
+        @Body query: BookQuery): BooksPage
 
     // --- Collections ---
     @GET("collections")
@@ -312,14 +331,12 @@ interface ApiService {
     @POST("collections/{id}/books")
     suspend fun addBooksToCollection(
         @Path("id") id: Int,
-        @Body body: CollectionBookIds,
-    )
+        @Body body: CollectionBookIds)
 
     @HTTP(method = "DELETE", path = "collections/{id}/books", hasBody = true)
     suspend fun removeBooksFromCollection(
         @Path("id") id: Int,
-        @Body body: CollectionBookIds,
-    )
+        @Body body: CollectionBookIds)
 
     // --- Smart scopes ---
     @GET("smart-scopes")
@@ -371,11 +388,12 @@ interface ApiService {
     @GET("metadata/{kind}")
     suspend fun searchCatalog(
         @Path("kind") kind: String,
-        @Query("q") q: String,
-    ): List<NamedResult>
+        @Query("q") q: String): List<NamedResult>
 
     // --- Dashboard ---
-    /** Raw because the shape changed in 3.0 - decode with [com.bookorbit.core.model.ScrollerBooks]. */
+    /**
+     * Raw because the shape changed in 3.0 - decode with [com.bookorbit.core.model.ScrollerBooks].
+     */
     @GET("dashboard/scrollers/{type}")
     suspend fun getScroller(
         @Path("type") type: String,

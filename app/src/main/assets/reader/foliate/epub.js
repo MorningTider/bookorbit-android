@@ -711,6 +711,7 @@ class Loader {
   #cache = new Map()
   #children = new Map()
   #refCount = new Map()
+  #rootLoads = new Map()
   #getDirectUrl = null // Function to get direct streaming URLs for lazy loading
   eventTarget = new EventTarget()
   constructor({ loadText, loadBlob, resources, getDirectUrl }) {
@@ -762,11 +763,13 @@ class Loader {
   }
   ref(href, parent) {
     const childList = this.#children.get(parent)
-    if (!childList?.includes(href)) {
+    if (parent == null || !childList?.includes(href)) {
       this.#refCount.set(href, this.#refCount.get(href) + 1)
       //console.log(`referencing ${href}, now ${this.#refCount.get(href)}`)
-      if (childList) childList.push(href)
-      else this.#children.set(parent, [href])
+      if (parent != null) {
+        if (childList) childList.push(href)
+        else this.#children.set(parent, [href])
+      }
     }
     return this.#cache.get(href)
   }
@@ -787,6 +790,24 @@ class Loader {
   }
   // load manifest item, recursively loading all resources as needed
   async loadItem(item, parents = []) {
+    if (!item) return null
+    // A visible section, speculative neighbour and page counter each own a root reference.
+    // Parent-owned child resources are still deduplicated within that parent's lifetime.
+    if (parents.length) return this.#loadItem(item, parents)
+    const pending = this.#rootLoads.get(item.href)
+    if (pending) {
+      const url = await pending
+      return url ? this.ref(item.href) : url
+    }
+    const task = this.#loadItem(item, parents)
+    this.#rootLoads.set(item.href, task)
+    try {
+      return await task
+    } finally {
+      if (this.#rootLoads.get(item.href) === task) this.#rootLoads.delete(item.href)
+    }
+  }
+  async #loadItem(item, parents) {
     if (!item) return null
     const { href, mediaType } = item
 

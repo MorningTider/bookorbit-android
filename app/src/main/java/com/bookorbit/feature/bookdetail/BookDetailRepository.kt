@@ -1,5 +1,11 @@
 package com.bookorbit.feature.bookdetail
 
+import com.bookorbit.core.db.ReaderProgressDao
+import com.bookorbit.core.db.ReaderProgressEntity
+import com.bookorbit.core.model.BookFileProgress
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOf
 import com.bookorbit.core.db.PendingRatingDao
 import com.bookorbit.core.db.PendingRatingEntity
 import com.bookorbit.core.db.PendingReadStatusDao
@@ -24,9 +30,32 @@ class BookDetailRepository @Inject constructor(
     private val pendingRatingDao: PendingRatingDao,
     private val pendingReadStatusDao: PendingReadStatusDao,
     private val syncScheduler: SyncScheduler,
+    private val progressDao: ReaderProgressDao,
 ) {
-    suspend fun bookProgress(id: Int): Map<Int, Double> =
-        api.getBookFileProgress(id).associate { it.fileId to it.percentage }
+    suspend fun bookProgress(id: Int) = api.getBookFileProgress(id)
+
+    fun observeProgress(fileIds: List<Int>): Flow<List<ReaderProgressEntity>> {
+        val batches = fileIds.distinct().chunked(900)
+        if (batches.isEmpty()) return flowOf(emptyList())
+        return combine(batches.map { progressDao.observeFiles(it) }) { rows -> rows.flatMap { it } }
+    }
+
+    suspend fun localProgress(fileIds: List<Int>): List<ReaderProgressEntity> =
+        fileIds.distinct().chunked(900).flatMap { progressDao.getFiles(it) }
+
+    fun displayedProgress(
+        remote: List<BookFileProgress>,
+        local: List<ReaderProgressEntity>,
+        localAtFetch: Map<Int, ReaderProgressEntity>? = null,
+    ): Map<Int, Double> {
+        val result = remote.associate { it.fileId to it.percentage }.toMutableMap()
+        for (entry in local) {
+            val row = remote.firstOrNull { it.fileId == entry.fileId }
+            if (row == null || entry.dirty || (localAtFetch != null && entry != localAtFetch[entry.fileId]))
+                result[entry.fileId] = entry.percentage
+        }
+        return result
+    }
 
     suspend fun readingLog(id: Int, page: Int) = api.getBookReadingLog(id, page)
 
@@ -42,9 +71,9 @@ class BookDetailRepository @Inject constructor(
     suspend fun fileProgress(fileId: Int): Double? = runCatching { api.getFileProgress(fileId)?.percentage }.getOrNull()
 
     /**
-     * Writes the pending status locally first so it's never lost offline, then attempts the
-     * server call — clearing the pending row on success and leaving it queued (for [SyncScheduler]
-     * to retry) on failure.
+     * Writes the pending status locally first so it's never lost offline, then attempts the server
+     * call — clearing the pending row on success and leaving it queued (for [SyncScheduler] to
+     * retry) on failure.
      */
     suspend fun setReadStatus(id: Int, status: String) {
         pendingReadStatusDao.upsert(PendingReadStatusEntity(id, status, System.currentTimeMillis()))
@@ -93,7 +122,9 @@ class BookDetailRepository @Inject constructor(
         return pendingRatingDao.all().isNotEmpty()
     }
 
-    /** Retries every queued read-status change. Returns true if anything is still pending afterward. */
+    /**
+     * Retries every queued read-status change. Returns true if anything is still pending afterward.
+     */
     suspend fun flushPendingReadStatus(): Boolean {
         for (p in pendingReadStatusDao.all()) {
             val ok = runCatching { api.setReadStatus(p.bookId, SetReadStatusRequest(p.status)) }.isSuccess

@@ -32,6 +32,7 @@ import javax.inject.Inject
 class LibrariesViewModel @Inject constructor(
     private val repo: BrowseRepository,
     private val prefsStore: FilterPrefsStore,
+    private val progress: com.bookorbit.feature.reader.ReaderProgressRepository,
 ) : ViewModel() {
 
     private val _libraries = MutableStateFlow<List<Library>>(emptyList())
@@ -63,6 +64,8 @@ class LibrariesViewModel @Inject constructor(
     init {
         loadLibraries()
     }
+
+    suspend fun awaitReadingProgress() = progress.awaitReports()
 
     fun loadLibraries() {
         _status.value = Status.LOADING

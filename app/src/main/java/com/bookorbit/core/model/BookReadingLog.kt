@@ -2,7 +2,9 @@ package com.bookorbit.core.model
 
 import kotlinx.serialization.Serializable
 
-@Serializable data class BookFileProgress(val fileId: Int, val percentage: Double = 0.0)
+@Serializable data class BookFileProgress(val fileId: Int, val percentage: Double = 0.0,
+    val updatedAt: String? = null,
+)
 
 @Serializable
 data class BookReadingRecord(
@@ -16,7 +18,10 @@ data class BookReadingRecord(
     val sessionType: String = "read",
 )
 
-@Serializable data class BookReadingStats(val totalSessions: Int = 0, val totalSeconds: Long = 0)
+@Serializable data class BookReadingStats(val totalSessions: Int = 0, val totalSeconds: Long = 0,
+    val paceProgressDelta: Double = 0.0,
+    val paceDurationSeconds: Long = 0,
+)
 
 @Serializable
 data class BookReadingLog(

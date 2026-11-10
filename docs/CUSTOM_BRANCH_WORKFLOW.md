@@ -14,7 +14,7 @@
 3. 合并目标正式 tag，逐项处理冲突，结合需求清单和补丁索引检查功能。
 4. 核对 API DTO、Android SDK、依赖锁、应用标识、版本码与签名。
 5. 运行中文键和格式占位符校验、JS 兼容测试、两种 flavor 的单元测试、Lint 与 APK 构建。
-6. 运行隔离模拟器的 `ReaderInteractionTest`、`ReaderEngineTest` 与 `BookExperienceTest`，检查首次及每章字体就绪、重新进入非零进度、按住纸张、松手提交与拖回取消、连续导航、目录详情点击、首页快捷入口、阅读记录以及窄屏大字号搜索点选。保存截图和帧耗时，再完成真机覆盖安装、字体离线、进度日志、PDF/漫画和有声书回归。
+6. 运行隔离模拟器的 `ReaderInteractionTest`、`ReaderEngineTest`、`BookExperienceTest` 与 `BookCommentsTest`，检查首次及每章字体就绪、重新进入非零进度、按住纸张、松手提交与拖回取消、连续导航、目录详情点击、首页快捷入口、阅读记录以及窄屏大字号搜索点选。保存截图和帧耗时，再完成真机覆盖安装、字体离线、进度日志、PDF/漫画和有声书回归。
 7. 验收通过后合回定制分支，更新需求矩阵和验收文档，再推送用户 fork。
 
 ```sh
@@ -44,3 +44,5 @@ node --test compat-tests/*.test.mjs
 跨端同步回归同时运行 `ReaderProgressSyncTest` 和 `ReaderSyncHttpTest`，核对 `textUpdatedAt`、`source=text`、旧离线检查点、网页主动回退及本机时钟偏差。模拟HTTP与实际NAS的手机联调分别记录。
 
 安装标识回归运行 `com.bookorbit.app.AppBrandingTest`，Full与F-Droid分别检查实际名称、中英文资源、普通与圆形图标。主名称为BookOrbit，背景为蓝色 `#2563EB`，前景为白色轨道。上游合并后检查 `src/debug` 是否重新覆盖这些主资源。
+
+共享评论升级需同时核对服务端生成迁移、DTO中的可空权限字段、回复归属、删除权限、幂等ID，以及切换书籍/讨论时旧请求不能覆盖新目标。真实页码需检查根资源引用计数，后台排版释放不能撤销正在阅读章节的Blob。服务端书架按最近阅读格式选取进度，手机显示保留一位小数。

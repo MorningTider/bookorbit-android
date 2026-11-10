@@ -4,11 +4,11 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -17,12 +17,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import com.bookorbit.R
 import coil.compose.AsyncImage
+import com.bookorbit.R
 import com.bookorbit.core.model.BookCard
 import com.bookorbit.core.model.BookFiles
 import com.bookorbit.ui.LocalImageUrls
@@ -46,8 +46,7 @@ private val FORMAT_COLORS: Map<String, Color> = mapOf(
 fun BookCard(
     book: BookCard,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
+    modifier: Modifier = Modifier) {
     val imageUrls = LocalImageUrls.current
     val primaryFormat = BookFiles.badgeFormat(book.files)
     val progress = book.readingProgress
@@ -56,13 +55,12 @@ fun BookCard(
         modifier = modifier
             .clip(RoundedCornerShape(8.dp))
             .background(MaterialTheme.colorScheme.surface)
-            .clickable(onClick = onClick),
+            .clickable(onClick = onClick)
     ) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .aspectRatio(2f / 3f),
-        ) {
+                .aspectRatio(2f / 3f)) {
             if (book.hasCover) {
                 AsyncImage(
                     model = imageUrls.cover(book.id),
@@ -108,13 +106,12 @@ fun BookCard(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(MaterialTheme.colorScheme.outline),
-            ) {
+                    .background(MaterialTheme.colorScheme.outline)) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth(fraction = (progress / 100.0).coerceIn(0.0, 1.0).toFloat())
                         .background(Accent)
-                        .padding(vertical = 1.5.dp),
+                        .padding(vertical = 1.5.dp)
                 )
             }
         }
@@ -127,6 +124,16 @@ fun BookCard(
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
+            if (progress != null) {
+                Text(
+                    stringResource(
+                        R.string.shelf_read_progress,
+                        com.bookorbit.core.model.readingPercentage(progress),
+                    ),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
             if (book.authors.isNotEmpty()) {
                 Text(
                     book.authors.joinToString(", "),

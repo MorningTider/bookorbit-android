@@ -51,3 +51,10 @@
 ## BA-C24
 
 `app_name`中英文均为BookOrbit，主资源 `ic_launcher_background` 为蓝色 `#2563EB`，复用白色轨道前景。移除 `app/src/debug` 中的名称清单和图标覆盖，两个发行变体均继承主资源。升级后复验编译标签、安装后的普通/圆形图标以及原签名和兼容应用标识。测试入口为 `AppBrandingTest`。
+
+## BA-C25 至 BA-C28
+
+- `feature/comments`、`core/model/BookComment`与`ApiService`维护公共评论和回复，包含保留草稿、幂等请求、游标、删除确认和旧服务端提示。对应服务端实现位于BookOrbit的`book-comment`模块和`0130_book-comments`迁移。
+- `ReadingDisplay`统一进度精度，`BookDetailRepository/ViewModel`合并本机检查点时比较读取快照，避免依赖设备与服务器时钟一致。书架恢复先等待已排队的读取报告，按页批量查询Room，每批最多900个文件。
+- `reader-pagination.js`复用同一Paginator配置与字体逐章测量，`ReaderBridge.Pages`传递真实页码。章节加载器的根引用与并发创建经过独立回归。
+- `ReaderEngineTest`覆盖正文/顶部标题、整本页数、快速跨章后定位和字体就绪；`BookCommentsTest`覆盖公开书评、失败重试、回复和删除确认。

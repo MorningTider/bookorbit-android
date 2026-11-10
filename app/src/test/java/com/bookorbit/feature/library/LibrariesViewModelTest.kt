@@ -23,7 +23,7 @@ class LibrariesViewModelTest {
     private fun viewModel(repo: BrowseRepository): LibrariesViewModel {
         val prefs = mockk<FilterPrefsStore>()
         coEvery { prefs.load(any()) } returns StoredFilterPrefs()
-        return LibrariesViewModel(repo, prefs)
+        return LibrariesViewModel(repo, prefs, mockk(relaxed = true))
     }
 
     @Test

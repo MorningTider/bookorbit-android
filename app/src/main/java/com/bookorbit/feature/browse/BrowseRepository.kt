@@ -6,15 +6,15 @@ import com.bookorbit.core.model.BookQuery
 import com.bookorbit.core.model.BooksPage
 import com.bookorbit.core.model.Collection
 import com.bookorbit.core.model.Library
+import com.bookorbit.core.model.ScrollerBooks
 import com.bookorbit.core.model.SearchResult
 import com.bookorbit.core.model.SeriesBooksPage
 import com.bookorbit.core.model.SeriesPage
-import com.bookorbit.core.model.ScrollerBooks
 import com.bookorbit.core.model.SmartScope
 import com.bookorbit.core.network.ApiService
-import kotlinx.serialization.json.Json
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.serialization.json.Json
 
 /**
  * Read-side operations for the browse tabs. Thin wrapper over [ApiService] covering the
@@ -24,11 +24,26 @@ import javax.inject.Singleton
 class BrowseRepository @Inject constructor(
     private val api: ApiService,
     private val json: Json,
+    private val progressDao: com.bookorbit.core.db.ReaderProgressDao,
 ) {
     suspend fun libraries(): List<Library> = api.getLibraries()
 
-    suspend fun libraryBooks(libraryId: Int, query: BookQuery): BooksPage =
-        api.getLibraryBooks(libraryId, query)
+    suspend fun libraryBooks(libraryId: Int, query: BookQuery): BooksPage {
+        val page = api.getLibraryBooks(libraryId, query)
+        val pending =
+            page.items.flatMap { it.files }.map { it.id }.distinct().chunked(900)
+                .flatMap { progressDao.getFiles(it) }
+                .filter { it.dirty }
+                .associateBy { it.fileId }
+        return page.copy(
+            items =
+                page.items.map { book ->
+                    val latest =
+                        book.files.mapNotNull { pending[it.id] }.maxByOrNull { it.updatedAt }
+                    if (latest == null) book else book.copy(readingProgress = latest.percentage)
+                }
+        )
+    }
 
     suspend fun search(q: String, limit: Int = 20): List<SearchResult> = api.searchBooks(q, limit)
 

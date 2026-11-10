@@ -4,11 +4,18 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface ReaderProgressDao {
     @Query("SELECT * FROM reader_progress WHERE fileId = :fileId")
     suspend fun get(fileId: Int): ReaderProgressEntity?
+
+    @Query("SELECT * FROM reader_progress WHERE fileId IN (:fileIds)")
+    fun observeFiles(fileIds: List<Int>): Flow<List<ReaderProgressEntity>>
+
+    @Query("SELECT * FROM reader_progress WHERE fileId IN (:fileIds)")
+    suspend fun getFiles(fileIds: List<Int>): List<ReaderProgressEntity>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(entity: ReaderProgressEntity)

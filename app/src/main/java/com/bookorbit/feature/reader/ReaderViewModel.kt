@@ -1,25 +1,26 @@
 package com.bookorbit.feature.reader
 
-import com.bookorbit.R
-import com.bookorbit.ui.UiText
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.bookorbit.R
 import com.bookorbit.core.model.BookAnnotation
 import com.bookorbit.core.model.BookBookmark
 import com.bookorbit.core.storage.LocalRef
 import com.bookorbit.feature.bookdetail.BookDetailRepository
 import com.bookorbit.feature.downloads.DownloadsRepository
 import com.bookorbit.feature.sessions.ReadingSessionTracker
+import com.bookorbit.ui.UiText
 import dagger.hilt.android.lifecycle.HiltViewModel
+import javax.inject.Inject
+import kotlin.math.roundToInt
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.CancellationException
-import javax.inject.Inject
-import kotlin.math.roundToInt
 
 private const val PROGRESS_THROTTLE_MS = 2_000L
 
@@ -49,7 +50,9 @@ class ReaderViewModel @Inject constructor(
     /** Text the user has selected in the page, not yet saved as a highlight. */
     data class PendingSelection(val text: String, val cfi: String)
 
-    /** What the floating highlight toolbar is acting on: a new selection, or an existing highlight. */
+    /**
+     * What the floating highlight toolbar is acting on: a new selection, or an existing highlight.
+     */
     data class ToolbarTarget(
         val rect: ViewportRect?,
         val selection: PendingSelection? = null,
@@ -73,6 +76,12 @@ class ReaderViewModel @Inject constructor(
         val chapterTitle: String? = null,
         val chapterHref: String? = null,
         val percentage: Int = 0,
+        val precisePercentage: Double = 0.0,
+        val currentPage: Int? = null,
+        val totalPages: Int? = null,
+        val wholeBookPages: Boolean = false,
+        val elapsedSeconds: Long = 0,
+        val remainingSeconds: Long? = null,
         val loaded: Boolean = false,
         val showPagingHint: Boolean = false,
         val annotations: List<BookAnnotation> = emptyList(),
@@ -102,6 +111,8 @@ class ReaderViewModel @Inject constructor(
     private var settingsSaveJob: Job? = null
     private var fontLoadJob: Job? = null
     private var lastSaved = 0L
+    private var historicalStats = com.bookorbit.core.model.BookReadingStats()
+    private var readingTimeJob: Job? = null
     private var checkingProgress = false
     private var pending: Pair<String?, Double>? = null
 
@@ -148,8 +159,13 @@ class ReaderViewModel @Inject constructor(
             }
 
             try {
+                val history = async {
+                    runCatching { bookRepo.readingLog(bookId, 1).stats }
+                        .getOrDefault(historicalStats)
+                }
                 val resolved = source.resolve(book)
                 val initial = progress.resolveInitial(resolved.fileId)
+                historicalStats = history.await()
                 _ui.update {
                     it.copy(
                         loadingFile = false,
@@ -179,13 +195,13 @@ class ReaderViewModel @Inject constructor(
                 val position =
                     progress.newerRemote(
                         fileId,
-                        InitialProgress(currentCfi, _ui.value.percentage / 100.0),
+                        InitialProgress(currentCfi, _ui.value.precisePercentage / 100.0),
                     )
                 if (
                     position != null &&
                         (position.cfi != currentCfi ||
                             position.cfi == null &&
-                                position.fraction != _ui.value.percentage / 100.0)
+                                position.fraction != _ui.value.precisePercentage / 100.0)
                 ) {
                     _ui.update { it.copy(syncedPosition = position) }
                 }
@@ -199,17 +215,26 @@ class ReaderViewModel @Inject constructor(
 
     fun keepCurrentProgress() {
         dismissSyncedProgress()
-        report(currentCfi, _ui.value.percentage.toDouble())
+        report(currentCfi, _ui.value.precisePercentage)
         flush()
     }
 
     fun onLoaded(toc: List<TocItem>, title: String?) {
-        _ui.value.resolved?.let { sessions.beginReading(it.fileId, it.initial.fraction?.let { fraction -> fraction * 100 }) }
+        _ui.value.resolved?.let { sessions.beginReading(it.fileId, it.initial.fraction?.let { fraction -> fraction * 100 },
+            ) }
         _ui.update { it.copy(loaded = true, toc = toc, chapterTitle = it.chapterTitle ?: title) }
+        readingTimeJob?.cancel()
+        readingTimeJob = viewModelScope.launch {
+            while (_ui.value.loaded) {
+                refreshReadingTime()
+                kotlinx.coroutines.delay(1_000)
+            }
+        }
     }
 
     /** Keep the last reading position and reset page state before a fresh WebView is created. */
     fun onRendererGone() {
+        readingTimeJob?.cancel()
         _ui.update { state ->
             state.copy(
                 loaded = false,
@@ -218,19 +243,45 @@ class ReaderViewModel @Inject constructor(
                 resolved = state.resolved?.let { resolved ->
                     resolved.copy(initial = InitialProgress(
                         currentCfi ?: resolved.initial.cfi,
-                        if (state.loaded) state.percentage / 100.0 else resolved.initial.fraction,
-                    ))
-                },
+                        if (state.loaded) state.precisePercentage / 100.0
+                                    else resolved.initial.fraction,
+                                )
+                        )
+                    },
             )
         }
     }
 
-    fun onRelocate(cfi: String?, fraction: Double?, chapterTitle: String?, chapterHref: String? = null) {
+    fun onPages(current: Int?, total: Int?, wholeBook: Boolean) {
+        _ui.update {
+            it.copy(currentPage = current, totalPages = total, wholeBookPages = wholeBook)
+        }
+    }
+
+
+    private fun refreshReadingTime() {
+        val snap = sessions.currentReading(_ui.value.resolved?.fileId ?: return)
+        val seconds = (snap?.durationSeconds ?: 0).toLong()
+        val elapsed = historicalStats.totalSeconds + seconds
+        val remaining =
+            com.bookorbit.core.model.remainingReadingSeconds(
+                _ui.value.precisePercentage,
+                historicalStats.paceProgressDelta + (snap?.progressDelta ?: 0.0).coerceAtLeast(0.0),
+                historicalStats.paceDurationSeconds + seconds,
+            )
+        _ui.update { it.copy(elapsedSeconds = elapsed, remainingSeconds = remaining)
+        }
+    }
+
+    fun onRelocate(cfi: String?, fraction: Double?, chapterTitle: String?, chapterHref: String? = null,
+    ) {
         _ui.update {
             it.copy(
                 chapterTitle = chapterTitle ?: it.chapterTitle,
                 chapterHref = chapterHref ?: it.chapterHref,
                 percentage = fraction?.let { f -> (f * 100).roundToInt() } ?: it.percentage,
+                precisePercentage =
+                    fraction?.let { f -> (f * 100).coerceIn(0.0, 100.0) } ?: it.precisePercentage,
             )
         }
         if (cfi != null) currentCfi = cfi
@@ -261,7 +312,8 @@ class ReaderViewModel @Inject constructor(
     }
 
     fun onSearchDone(total: Int, capped: Boolean) = _ui.update { s ->
-        s.search?.let { s.copy(search = it.copy(running = false, done = true, total = total, capped = capped, progress = 1.0)) } ?: s
+        s.search?.let { s.copy(search = it.copy(running = false, done = true, total = total, capped = capped, progress = 1.0,
+                        )) } ?: s
     }
 
     // --- bookmarks ---
@@ -321,7 +373,8 @@ class ReaderViewModel @Inject constructor(
     }
 
     fun onSelectionCleared() {
-        // A selection going away dismisses the new-highlight toolbar, but not one opened on an existing highlight.
+        // A selection going away dismisses the new-highlight toolbar, but not one opened on an
+        // existing highlight.
         _ui.update { s -> if (s.toolbar?.annotationId == null) s.copy(toolbar = null) else s }
     }
 
@@ -426,7 +479,8 @@ class ReaderViewModel @Inject constructor(
                 val faces = fontRepository.cachedFaces(font)
                 _ui.update { state -> state.copy(fontFaces = faces, fonts = state.fonts.map {
                     if (it.cssFamily == font.cssFamily) it.copy(downloaded = true) else it
-                }) }
+                },
+                    ) }
                 updateSettings(_ui.value.settings.copy(fontFamily = font.cssFamily))
             } catch (e: CancellationException) {
                 throw e

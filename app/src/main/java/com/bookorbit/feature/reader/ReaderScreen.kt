@@ -25,6 +25,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -43,7 +44,6 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
@@ -197,6 +197,7 @@ fun ReaderScreen(
             when (event) {
                 is ReaderEvent.Ready -> ready = true
                 is ReaderEvent.Loaded -> vm.onLoaded(event.toc, event.title)
+                is ReaderEvent.Pages -> vm.onPages(event.current, event.total, event.wholeBook)
                 is ReaderEvent.Relocate ->
                     vm.onRelocate(event.cfi, event.fraction, event.chapterTitle, event.chapterHref)
                 ReaderEvent.AutoReadStopped -> autoReading = false
@@ -237,6 +238,14 @@ fun ReaderScreen(
         }
     }
 
+    var comments by remember { mutableStateOf<com.bookorbit.feature.comments.CommentTarget?>(null) }
+    comments?.let { target ->
+        com.bookorbit.feature.comments.BookCommentsSheet(
+            vm.bookId,
+            target,
+            onDismiss = { comments = null },
+        )
+    }
     val resolved = ui.resolved
     LaunchedEffect(ready, resolved, rendererFailed) {
         if (ready && resolved != null && !opened && !rendererFailed) {
@@ -259,16 +268,6 @@ fun ReaderScreen(
     Box(modifier = Modifier.fillMaxSize().background(surface)) {
         val palette = readerPalette(ui.settings)
         Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
-            if (ui.settings.showReadingStatus) {
-                Text(
-                    ui.chapterTitle ?: ui.title.orEmpty(),
-                    color = palette.text.copy(alpha = 0.55f),
-                    style = androidx.compose.material3.MaterialTheme.typography.labelSmall,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(horizontal = 22.dp, vertical = 8.dp),
-                )
-            }
             Box(
                 Modifier.weight(1f).fillMaxWidth().onGloballyPositioned {
                     readerTop = it.positionInRoot().y.toDouble() / density
@@ -295,7 +294,14 @@ fun ReaderScreen(
                         style = androidx.compose.material3.MaterialTheme.typography.labelSmall,
                     )
                     Text(
-                        "${ui.percentage}%",
+                        ui.currentPage?.let { current ->
+                            stringResource(
+                                if (ui.wholeBookPages) R.string.rs_pages
+                                else R.string.rs_chapter_pages,
+                                current,
+                                ui.totalPages ?: current,
+                            )
+                        } ?: "${com.bookorbit.core.model.readingPercentage(ui.precisePercentage)}%",
                         modifier = Modifier.weight(1f),
                         color = palette.text.copy(alpha = 0.55f),
                         textAlign = androidx.compose.ui.text.style.TextAlign.Center,
@@ -314,9 +320,24 @@ fun ReaderScreen(
                 title = ui.title.orEmpty(),
                 chapterTitle = ui.chapterTitle,
                 percentage = ui.percentage,
+                precisePercentage = ui.precisePercentage,
+                elapsedSeconds = ui.elapsedSeconds,
+                remainingSeconds = ui.remainingSeconds,
                 loaded = ui.loaded,
                 settings = ui.settings,
                 onBack = onBack,
+                onReview = { comments = com.bookorbit.feature.comments.CommentTarget() },
+                chapterAvailable = ui.chapterHref != null && ui.resolved != null,
+                onChapterComment = {
+                    if (ui.chapterHref != null && ui.resolved != null)
+                        comments =
+                            com.bookorbit.feature.comments.CommentTarget(
+                                "chapter",
+                                ui.resolved?.fileId,
+                                ui.chapterHref,
+                                ui.chapterTitle,
+                            )
+                },
                 onSearch = {
                     autoReading = false
                     searchVisible = true
@@ -384,6 +405,25 @@ fun ReaderScreen(
                     rect.top + readerTop > 150 -> rect.top + readerTop - 60
                     else -> rect.bottom + readerTop + 36
                 }
+            target.selection?.let { selection ->
+                TextButton(
+                    onClick = {
+                        comments =
+                            com.bookorbit.feature.comments.CommentTarget(
+                                "paragraph",
+                                ui.resolved?.fileId,
+                                ui.chapterHref,
+                                ui.chapterTitle,
+                                selection.cfi,
+                                selection.text.take(3000),
+                            )
+                        vm.dismissToolbar()
+                    },
+                    modifier = Modifier.offset(x = x.dp, y = (y + 52).dp),
+                ) {
+                    Text(stringResource(R.string.comments_paragraph))
+                }
+            }
             HighlightToolbar(
                 currentColor = annotation?.color,
                 onColor = { vm.highlight(it) },

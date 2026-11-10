@@ -14,13 +14,21 @@ export async function settleReaderFonts(
 
 /** Each section owns a fresh FontFaceSet, including chapters revisited from the contents. */
 export async function prepareSectionFonts(doc, settings, faces) {
-  if (
-    settings?.fontFamily &&
-    faces?.some((face) => face.family === settings.fontFamily)
-  ) {
-    await doc.fonts.load(
-      `${settings.fontWeight >= 700 ? 700 : 400} ${settings.fontSize || 16}px ${settings.fontFamily}`,
+  const selected =
+    faces?.filter((face) => face.family === settings?.fontFamily) ?? [];
+  if (selected.length) {
+    const styles = selected.some((face) => face.style === "italic")
+      ? ["", "italic "]
+      : [""];
+    const requests = styles.flatMap((style) =>
+      [400, 700].map((weight) =>
+        doc.fonts.load(
+          `${style}${weight} ${settings.fontSize || 16}px ${settings.fontFamily}`,
+        ),
+      ),
     );
+    await Promise.all(requests);
   }
+  // The hidden iframe is laid out before this hook. This includes embedded heading fonts too.
   await doc.fonts.ready;
 }

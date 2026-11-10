@@ -81,16 +81,20 @@ class ReaderEngineTest {
                 fileSize = fontBytes.size.toLong(),
                 createdAt = "test",
             )
+        val boldBytes = File("/system/fonts/NotoSerif-Bold.ttf").readBytes()
+        val boldFont = font.copy(id = 2, weight = 700, fileSize = boldBytes.size.toLong())
         server.enqueue(
             MockResponse()
-                .setBody(json.encodeToString(ListSerializer(ReaderFont.serializer()), listOf(font)))
+                .setBody(json.encodeToString(ListSerializer(ReaderFont.serializer()), listOf(font, boldFont),
+                    ))
         )
         server.enqueue(MockResponse().setBody("[]"))
         server.enqueue(MockResponse().setBody(Buffer().write(fontBytes)))
+        server.enqueue(MockResponse().setBody(Buffer().write(boldBytes)))
         val family = repository.catalog(true).single()
         repository.download(family)
         val faces = repository.cachedFaces(family)
-        assertEquals(1, faces.size)
+        assertEquals(2, faces.size)
         val book = File(context.cacheDir, "$testName.epub").apply { writeFixture(this) }
         val background =
             mutableStateOf(readerPalette(ReaderSettings(isDark = false, themeName = "sepia")).page)
@@ -100,6 +104,7 @@ class ReaderEngineTest {
         val ready = AtomicBoolean(false)
         val loaded = AtomicBoolean(false)
         val firstFrameFontReady = AtomicBoolean(false)
+        val pages = AtomicReference<ReaderEvent.Pages?>()
         val loadedEventSeen = AtomicBoolean(false)
         val initialProgressReportedEarly = AtomicBoolean(false)
         val relocated = AtomicBoolean(false)
@@ -124,6 +129,7 @@ class ReaderEngineTest {
                         loaded.set(true)
                     }
                 }
+                is ReaderEvent.Pages -> pages.set(event)
                 is ReaderEvent.Relocate -> {
                     if (!loadedEventSeen.get()) initialProgressReportedEarly.set(true)
                     cfi.set(event.cfi)
@@ -280,6 +286,10 @@ class ReaderEngineTest {
                 ) == "true"
             }
             SystemClock.sleep(300)
+            waitUntil("all chapters have real reflowed page counts", failure) {
+                pages.get()?.wholeBook == true
+            }
+            assertTrue("Whole book page count includes later chapters", pages.get()!!.total!! > 10)
             screenshot("eye-comfort-body")
             val host = webView.parent as ReaderPageCurlHost
             val samples = Collections.synchronizedList(mutableListOf<Long>())
@@ -452,8 +462,44 @@ class ReaderEngineTest {
                 !host.isTurning && fraction.get() > beforeCover
             }
             controller.applyStyles(settings)
+            SystemClock.sleep(100)
+            evaluate(
+                webView,
+                """
+                (() => {
+                  const renderer = document.querySelector('foliate-view').renderer;
+                  const prepare = renderer.prepareDocument;
+                  window.__headingFontReadyBeforeReveal = false;
+                  renderer.prepareDocument = async doc => {
+                    await prepare(doc);
+                    window.__headingFontReadyBeforeReveal = doc.fonts.check('700 22px ${family.cssFamily}');
+                  };
+                })()
+            """
+                    .trimIndent(),
+            )
+            val chapterStarted = SystemClock.elapsedRealtime()
+            val probe =
+                "JSON.stringify({header:document.getElementById('chapter-title').textContent,location:document.querySelector('foliate-view').lastLocation,contents:document.querySelector('foliate-view').renderer.getContents().map(x=>({index:x.index,title:x.doc.title})),pages:document.querySelector('foliate-view').renderer.pages,page:document.querySelector('foliate-view').renderer.page})"
+            File(context.getExternalFilesDir(null), "reader-ui-validation/chapter-before.txt")
+                .writeText(evaluate(webView, probe))
             controller.nextChapter()
-            waitUntil("next chapter", failure) { chapter.get()?.contains("chapter2.xhtml") == true }
+            try {
+                waitUntil("next chapter", failure) { chapter.get()?.contains("chapter2.xhtml") == true }
+            } finally {
+                File(context.getExternalFilesDir(null), "reader-ui-validation/chapter-after.txt")
+                    .writeText(evaluate(webView, probe))
+            }
+            File(context.getExternalFilesDir(null), "reader-ui-validation/chapter-transition.txt")
+                .writeText(
+                    "chapterMs=${SystemClock.elapsedRealtime() - chapterStarted}\nheadingReady=" +
+                        evaluate(webView, "window.__headingFontReadyBeforeReveal")
+                )
+            assertEquals(
+                "Chapter heading bold font is ready before the section can be shown",
+                "true",
+                evaluate(webView, "window.__headingFontReadyBeforeReveal"),
+            )
             assertEquals(
                 "New chapter has its selected font before relocation",
                 "true",
@@ -461,6 +507,11 @@ class ReaderEngineTest {
                     webView,
                     """(() => { const d=document.querySelector('foliate-view').renderer.getContents()[0].doc; return d.fonts.status==='loaded' && d.fonts.check('22px ${family.cssFamily}') && d.defaultView.getComputedStyle(d.body).fontFamily.includes('${family.cssFamily}'); })()""",
                 ),
+            )
+            assertEquals(
+                "Header changes in the same DOM as the chapter",
+                "\"第2章 山间清风\"",
+                evaluate(webView, "document.getElementById('chapter-title').textContent"),
             )
             controller.previousChapter()
             waitUntil("previous chapter", failure) {

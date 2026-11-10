@@ -93,3 +93,22 @@ BA-C11、BA-C12、BA-C16 同时补充参考图的紧凑行布局、七色选择�
 阅读操作参考番茄的目录、设置和日夜切换入口。产品截图和介绍见 [应用宝番茄免费小说页面](https://sj.qq.com/appdetail/com.dragon.read)。实现基于本项目现有 Compose 和 Foliate 阅读器，使用 BookOrbit 服务端接口。
 
 原生绘制依据 [Canvas](https://developer.android.com/reference/android/graphics/Canvas)、[硬件加速说明](https://developer.android.com/develop/ui/views/graphics/hardware-accel) 与 [帧提交回调](<https://developer.android.com/reference/android/view/ViewTreeObserver#registerFrameCommitCallback(java.lang.Runnable)>)。番茄内部算法缺少可核实的公开说明，本仓库维护自有实现。
+
+## 2026-11-09 章节显示与共享评论补充
+
+候选 `0.7.1-custom.7`，版本码 `708`。以下为本轮验收目标，实际部署和手机验收分别记录。
+
+| 编号 | 需求 | 验收要求 |
+| --- | --- | --- |
+| BA-C25 | 服务器共享评论 | 书评、章节评论、选中文本段评向本服务器有权访问该书的用户开放，可回复及回复他人的回复；保留私人高亮与笔记的原有可见范围 |
+| BA-C26 | 进度显示一致 | 阅读器、详情继续阅读、格式标签和书架统一到一位小数，保留小于1%的位置；本机检查点及时显示，服务端书架取最近阅读文件的进度 |
+| BA-C27 | 页码和阅读时间 | 按当前字体、字号和窗口真实排版计算当前页和总页，未完成时明确显示本章页码；累计有效前台阅读时间，阅读速度足够后估算剩余时间 |
+| BA-C28 | 跨章节同步显示 | 正文与大号标题所需的常规、粗体字体同时就绪后显示；顶部小标题与正文在同一WebView帧更新；章节缓存和后台分页正确持有和释放资源 |
+
+评论使用 `GET/POST /api/v1/books/{bookId}/comments`，游标分页每次20条。删除自己的记录走 `DELETE /comments/{id}/own`，管理他人的记录走 `/moderate`，后者由服务端ManageUsers权限保护。回复保留父评论和根线程，删除显示占位并保留已有回复。提交携带用户范围内唯一的clientId，网络失败保留草稿和相同请求标识，重试避免重复创建。
+
+段评绑定bookFileId、CFI与所选原文，章节评论绑定文件与chapterHref。公共列表只返回显示名、正文与评论位置，内容按纯文本展示。每次读取和写入重新检查书籍访问权限。
+
+分页使用一个隐藏排版器逐章测量，并在章节之间让出空闲时间。仅保存各章页数，改变排版或窗口后重新计算。主题、亮度及翻页效果变化复用已有排版结果。章节加载器对并发根引用逐个计数，避免预加载和计数器释放正在显示的章节。显式跳转等待当前导航结束。
+
+预计剩余时间采用服务端paceProgressDelta/paceDurationSeconds加当前有效会话，阅读不足时显示正在估算。设置同步、评论通知与自定义背景另列后续事项。

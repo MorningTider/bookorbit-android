@@ -4,21 +4,19 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.bookorbit.core.auth.SessionManager
-import com.bookorbit.core.db.DownloadEntity
 import com.bookorbit.core.model.BookAnnotation
 import com.bookorbit.core.model.BookDetail
-import com.bookorbit.core.model.BookFiles
 import com.bookorbit.core.model.BookRecommendation
 import com.bookorbit.core.model.CollectionWithMembership
 import com.bookorbit.feature.downloads.DownloadsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import javax.inject.Inject
 
 private const val EDIT_METADATA_PERMISSION = "library_edit_metadata"
 
@@ -67,6 +65,11 @@ class BookDetailViewModel @Inject constructor(
         it.isSuperuser || EDIT_METADATA_PERMISSION in it.permissions
     } ?: false
 
+    private var localAtFetch: Map<Int, com.bookorbit.core.db.ReaderProgressEntity>? = null
+    private var remoteProgress = emptyList<com.bookorbit.core.model.BookFileProgress>()
+    private var localProgress = emptyList<com.bookorbit.core.db.ReaderProgressEntity>()
+    private var progressObserver: kotlinx.coroutines.Job? = null
+
     init {
         load()
     }
@@ -93,15 +96,33 @@ class BookDetailViewModel @Inject constructor(
                 val highlights = runCatching { repo.highlights(bookId) }.getOrDefault(emptyList())
                 _ui.update { it.copy(highlights = highlights) }
             }
+            progressObserver?.cancel()
+            progressObserver = launch {
+                repo.observeProgress(book.files.map { it.id }).collect { rows ->
+                    localProgress = rows
+                    _ui.update {
+                        it.copy(
+                            fileProgress =
+                                repo.displayedProgress(remoteProgress, rows, localAtFetch)
+                        )
+                    }
+                }
+            }
             refreshReadingState()
         }
     }
 
     fun refreshReadingState() {
         viewModelScope.launch {
-            val progress =
-                runCatching { repo.bookProgress(bookId) }.getOrDefault(_ui.value.fileProgress)
-            _ui.update { it.copy(fileProgress = progress) }
+            val book = _ui.value.book ?: return@launch
+            val snapshot = repo.localProgress(book.files.map { it.id }).associateBy { it.fileId }
+            runCatching { repo.bookProgress(bookId) }.onSuccess {
+                remoteProgress = it
+                localAtFetch = snapshot
+            }
+            _ui.update {
+                it.copy(fileProgress = repo.displayedProgress(remoteProgress, localProgress, localAtFetch))
+            }
         }
         loadReadingLog()
     }
