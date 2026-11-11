@@ -1,6 +1,10 @@
 package com.bookorbit.core.network
 
 import com.bookorbit.core.model.AppInfo
+import com.bookorbit.core.model.ReadingProgressWrites
+import com.bookorbit.core.model.ReadingProgressList
+import com.bookorbit.core.model.DashboardWidgetRequest
+import com.bookorbit.core.model.DashboardWidgetList
 import com.bookorbit.core.model.AudioProgress
 import com.bookorbit.core.model.AudiobookManifest
 import com.bookorbit.core.model.AudiobookPlaybackState
@@ -19,8 +23,6 @@ import com.bookorbit.core.model.BooksPage
 import com.bookorbit.core.model.Collection
 import com.bookorbit.core.model.CollectionBookIds
 import com.bookorbit.core.model.CollectionWithMembership
-import com.bookorbit.core.model.DashboardWidgetList
-import com.bookorbit.core.model.DashboardWidgetRequest
 import com.bookorbit.core.model.FileProgress
 import com.bookorbit.core.model.FinalizeRequest
 import com.bookorbit.core.model.Library
@@ -32,8 +34,6 @@ import com.bookorbit.core.model.OidcCallbackResponse
 import com.bookorbit.core.model.OidcProviderPublic
 import com.bookorbit.core.model.OidcStateResponse
 import com.bookorbit.core.model.PutAudiobookPlaybackState
-import com.bookorbit.core.model.ReadingProgressList
-import com.bookorbit.core.model.ReadingProgressWrites
 import com.bookorbit.core.model.SaveAudioProgress
 import com.bookorbit.core.model.SaveFileProgress
 import com.bookorbit.core.model.SearchResult
@@ -87,20 +87,20 @@ interface ApiService {
     ): com.bookorbit.core.model.BookComment
 
     @DELETE("books/{bookId}/comments/{id}/{action}")
-    suspend fun deleteBookComment(
-        @Path("bookId") bookId: Int,
-        @Path("id") id: Int,
-        @Path("action") action: String = "own",
-    )
+    suspend fun deleteBookComment(@Path("bookId") bookId: Int, @Path("id") id: Int, @Path("action") action: String = "own")
 
     // --- Auth ---
-    @POST("auth/login") suspend fun login(@Body body: LoginRequest): LoginResponse
+    @POST("auth/login")
+    suspend fun login(@Body body: LoginRequest): LoginResponse
 
-    @POST("auth/logout") suspend fun logout()
+    @POST("auth/logout")
+    suspend fun logout()
 
-    @GET("auth/me") suspend fun getMe(): AuthUser
+    @GET("auth/me")
+    suspend fun getMe(): AuthUser
 
-    @GET("auth/setup-status") suspend fun getSetupStatus(): com.bookorbit.core.model.SetupStatus
+    @GET("auth/setup-status")
+    suspend fun getSetupStatus(): com.bookorbit.core.model.SetupStatus
 
     @GET("app-settings/oidc/providers/public")
     suspend fun getPublicOidcProviders(): List<OidcProviderPublic>
@@ -118,14 +118,19 @@ interface ApiService {
         @Query("limit") limit: Int = 20,
     ): List<SearchResult>
 
-    @POST("books/query") suspend fun queryBooks(@Body query: BookQuery): BooksPage
+    @POST("books/query")
+    suspend fun queryBooks(@Body query: BookQuery): BooksPage
 
-    @GET("books/{id}") suspend fun getBookDetail(@Path("id") id: Int): BookDetail
+    @GET("books/{id}")
+    suspend fun getBookDetail(@Path("id") id: Int): BookDetail
 
     @PATCH("books/{id}/status")
-    suspend fun setReadStatus(@Path("id") id: Int, @Body body: SetReadStatusRequest): UserBookStatus
+    suspend fun setReadStatus(
+        @Path("id") id: Int,
+        @Body body: SetReadStatusRequest): UserBookStatus
 
-    @POST("books/bulk-set-rating") suspend fun setRating(@Body body: SetRatingRequest)
+    @POST("books/bulk-set-rating")
+    suspend fun setRating(@Body body: SetRatingRequest)
 
     @GET("books/{id}/recommendations")
     suspend fun getRecommendations(@Path("id") id: Int): List<BookRecommendation>
@@ -139,7 +144,8 @@ interface ApiService {
     @GET("reading-progress")
     suspend fun getReadingProgress(@Query("fileId") fileId: Int): ReadingProgressList
 
-    @PUT("reading-progress") suspend fun putReadingProgress(@Body body: ReadingProgressWrites)
+    @PUT("reading-progress")
+    suspend fun putReadingProgress(@Body body: ReadingProgressWrites)
 
     @POST("dashboard/widgets/batch")
     suspend fun getDashboardWidgets(@Body body: DashboardWidgetRequest): DashboardWidgetList
@@ -153,9 +159,7 @@ interface ApiService {
 
     // --- Ebook bookmarks ---
     @GET("books/{bookId}/bookmarks")
-    suspend fun getBookmarks(
-        @Path("bookId") bookId: Int
-    ): List<com.bookorbit.core.model.BookBookmark>
+    suspend fun getBookmarks(@Path("bookId") bookId: Int): List<com.bookorbit.core.model.BookBookmark>
 
     @POST("books/{bookId}/bookmarks")
     suspend fun createBookmark(
@@ -168,9 +172,7 @@ interface ApiService {
 
     // --- Audiobook bookmarks ---
     @GET("audiobooks/{bookId}/bookmarks")
-    suspend fun getAudiobookBookmarks(
-        @Path("bookId") bookId: Int
-    ): List<com.bookorbit.core.model.AudiobookBookmark>
+    suspend fun getAudiobookBookmarks(@Path("bookId") bookId: Int): List<com.bookorbit.core.model.AudiobookBookmark>
 
     @POST("audiobooks/{bookId}/bookmarks")
     suspend fun createAudiobookBookmark(
@@ -179,9 +181,7 @@ interface ApiService {
     ): com.bookorbit.core.model.AudiobookBookmark
 
     @DELETE("audiobooks/{bookId}/bookmarks/{bookmarkId}")
-    suspend fun deleteAudiobookBookmark(
-        @Path("bookId") bookId: Int,
-        @Path("bookmarkId") bookmarkId: String,
+    suspend fun deleteAudiobookBookmark(@Path("bookId") bookId: Int, @Path("bookmarkId") bookmarkId: String,
     )
 
     @GET("cbz/files/{fileId}/pages")
@@ -200,9 +200,7 @@ interface ApiService {
     ): com.bookorbit.core.model.HubAnnotationPage
 
     @GET("books/{bookId}/annotations")
-    suspend fun getAnnotations(
-        @Path("bookId") bookId: Int
-    ): List<com.bookorbit.core.model.BookAnnotation>
+    suspend fun getAnnotations(@Path("bookId") bookId: Int): List<com.bookorbit.core.model.BookAnnotation>
 
     @POST("books/{bookId}/annotations")
     suspend fun createAnnotation(
@@ -221,9 +219,11 @@ interface ApiService {
     @DELETE("books/{bookId}/annotations/{id}")
     suspend fun deleteAnnotation(@Path("bookId") bookId: Int, @Path("id") id: Int)
 
-    @GET("server-fonts") suspend fun getServerFonts(): List<com.bookorbit.feature.reader.ReaderFont>
+    @GET("server-fonts")
+    suspend fun getServerFonts(): List<com.bookorbit.feature.reader.ReaderFont>
 
-    @GET("fonts") suspend fun getUserFonts(): List<com.bookorbit.feature.reader.ReaderFont>
+    @GET("fonts")
+    suspend fun getUserFonts(): List<com.bookorbit.feature.reader.ReaderFont>
 
     @Streaming
     @GET("{collection}/{fontId}/file")
@@ -251,7 +251,9 @@ interface ApiService {
     )
 
     @POST("books/files/{fileId}/progress")
-    suspend fun saveFileProgress(@Path("fileId") fileId: Int, @Body body: SaveFileProgress)
+    suspend fun saveFileProgress(
+        @Path("fileId") fileId: Int,
+        @Body body: SaveFileProgress)
 
     /**
      * Raw file bytes. Streamed so large files don't buffer in memory. Server 3.0+ 404s this for
@@ -306,27 +308,33 @@ interface ApiService {
     ): AudiobookPlaybackState
 
     /** Cover image bytes, for caching a downloaded book's cover offline. */
-    @Streaming @GET("books/{id}/cover") suspend fun serveCover(@Path("id") id: Int): ResponseBody
+    @Streaming
+    @GET("books/{id}/cover")
+    suspend fun serveCover(@Path("id") id: Int): ResponseBody
 
     @GET("books/{id}/audio-progress")
     suspend fun getAudioProgress(@Path("id") id: Int): AudioProgress?
 
     @PATCH("books/{id}/audio-progress")
-    suspend fun saveAudioProgress(@Path("id") id: Int, @Body body: SaveAudioProgress)
+    suspend fun saveAudioProgress(
+        @Path("id") id: Int,
+        @Body body: SaveAudioProgress)
 
     // --- Libraries ---
-    @GET("libraries") suspend fun getLibraries(): List<Library>
+    @GET("libraries")
+    suspend fun getLibraries(): List<Library>
 
     @POST("libraries/{id}/books")
-    suspend fun getLibraryBooks(@Path("id") id: Int, @Body query: BookQuery): BooksPage
+    suspend fun getLibraryBooks(
+        @Path("id") id: Int,
+        @Body query: BookQuery): BooksPage
 
     // --- Collections ---
-    @GET("collections") suspend fun getCollections(): List<Collection>
+    @GET("collections")
+    suspend fun getCollections(): List<Collection>
 
     @GET("collections")
-    suspend fun getCollectionsForBook(
-        @Query("bookIds") bookIds: String
-    ): List<CollectionWithMembership>
+    suspend fun getCollectionsForBook(@Query("bookIds") bookIds: String): List<CollectionWithMembership>
 
     @GET("collections/{id}/books")
     suspend fun getCollectionBooks(
@@ -337,13 +345,18 @@ interface ApiService {
     ): BooksPage
 
     @POST("collections/{id}/books")
-    suspend fun addBooksToCollection(@Path("id") id: Int, @Body body: CollectionBookIds)
+    suspend fun addBooksToCollection(
+        @Path("id") id: Int,
+        @Body body: CollectionBookIds)
 
     @HTTP(method = "DELETE", path = "collections/{id}/books", hasBody = true)
-    suspend fun removeBooksFromCollection(@Path("id") id: Int, @Body body: CollectionBookIds)
+    suspend fun removeBooksFromCollection(
+        @Path("id") id: Int,
+        @Body body: CollectionBookIds)
 
     // --- Smart scopes ---
-    @GET("smart-scopes") suspend fun getSmartScopes(): List<SmartScope>
+    @GET("smart-scopes")
+    suspend fun getSmartScopes(): List<SmartScope>
 
     @GET("smart-scopes/{id}/books")
     suspend fun getSmartScopeBooks(
@@ -389,7 +402,9 @@ interface ApiService {
 
     // --- Catalog (filter typeaheads) ---
     @GET("metadata/{kind}")
-    suspend fun searchCatalog(@Path("kind") kind: String, @Query("q") q: String): List<NamedResult>
+    suspend fun searchCatalog(
+        @Path("kind") kind: String,
+        @Query("q") q: String): List<NamedResult>
 
     // --- Dashboard ---
     /**
@@ -407,14 +422,10 @@ interface ApiService {
     suspend fun getUserStatsSummary(): com.bookorbit.core.model.UserStatsSummary
 
     @GET("user-statistics/daily-reading")
-    suspend fun getDailyReading(
-        @Query("days") days: Int
-    ): List<com.bookorbit.core.model.UserDailyReading>
+    suspend fun getDailyReading(@Query("days") days: Int): List<com.bookorbit.core.model.UserDailyReading>
 
     @GET("user-statistics/reading-source-distribution")
-    suspend fun getReadingSources(
-        @Query("days") days: Int
-    ): com.bookorbit.core.model.SourceDistribution
+    suspend fun getReadingSources(@Query("days") days: Int): com.bookorbit.core.model.SourceDistribution
 
     @GET("dashboard/widgets/reading-streak")
     suspend fun getReadingStreak(): com.bookorbit.core.model.ReadingStreakWidget
@@ -433,9 +444,11 @@ interface ApiService {
         @Query("search") search: String? = null,
     ): BookDockFilesPage
 
-    @GET("book-dock/summary") suspend fun getBookDockSummary(): BookDockSummary
+    @GET("book-dock/summary")
+    suspend fun getBookDockSummary(): BookDockSummary
 
-    @GET("book-dock/files/{id}") suspend fun getBookDockFile(@Path("id") id: Int): BookDockFile
+    @GET("book-dock/files/{id}")
+    suspend fun getBookDockFile(@Path("id") id: Int): BookDockFile
 
     @Multipart
     @POST("book-dock/upload")
@@ -447,9 +460,11 @@ interface ApiService {
         @Body body: UpdateBookDockFileRequest,
     ): BookDockFile
 
-    @DELETE("book-dock/files/{id}") suspend fun discardBookDockFile(@Path("id") id: Int)
+    @DELETE("book-dock/files/{id}")
+    suspend fun discardBookDockFile(@Path("id") id: Int)
 
-    @POST("book-dock/files/discard") suspend fun bulkDiscardBookDock(@Body body: BookDockSelection)
+    @POST("book-dock/files/discard")
+    suspend fun bulkDiscardBookDock(@Body body: BookDockSelection)
 
     @POST("book-dock/files/apply-fetched")
     suspend fun applyFetchedBookDock(@Body body: BookDockSelection): BookDockBulkCounts
@@ -461,5 +476,6 @@ interface ApiService {
     suspend fun finalizeBookDock(@Body body: FinalizeRequest): BookDockFinalizeResult
 
     // --- App info ---
-    @GET("app-info") suspend fun getAppInfo(): AppInfo
+    @GET("app-info")
+    suspend fun getAppInfo(): AppInfo
 }

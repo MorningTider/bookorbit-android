@@ -6,11 +6,13 @@ import android.util.Log
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
+import com.bookorbit.core.auth.SessionManager
 import com.bookorbit.core.db.PendingReadingSessionDao
 import com.bookorbit.core.db.PendingReadingSessionEntity
 import com.bookorbit.core.model.SaveReadingSession
 import com.bookorbit.core.network.ApiService
 import com.bookorbit.core.sync.SyncScheduler
+import com.bookorbit.core.sync.isPermanentRejection
 import java.time.Instant
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -32,13 +34,18 @@ import retrofit2.HttpException
  * ([PendingReadingSessionDao]) so nothing is lost offline or if the process is killed; the server
  * treats a repeated session id as an update to the earlier partial row, so checkpointing is safe.
  *
- * Reading time counts only while the app is in the foreground; listening time only while playing.
+ * Reading time counts only while the app is in the foreground; listening time only while playing. A
+ * queued session belongs to the account that was signed in and waits while that account is signed
+ * out.
  */
 @Singleton
-class ReadingSessionTracker @Inject constructor(
+class ReadingSessionTracker
+@Inject
+constructor(
     private val dao: PendingReadingSessionDao,
     private val api: ApiService,
     private val syncScheduler: SyncScheduler,
+    private val session: SessionManager,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val recorder = ReadingSessionRecorder(maxGapMs = MAX_GAP_MS)
@@ -58,17 +65,20 @@ class ReadingSessionTracker @Inject constructor(
         scope.launch {
             while (true) {
                 delay(CHECKPOINT_INTERVAL_MS)
-                synchronized(this@ReadingSessionTracker) {
-                    if (recorder.isOpen) checkpointIfDue()
-                }
+                synchronized(this@ReadingSessionTracker) { if (recorder.isOpen) checkpointIfDue() }
             }
         }
         // ProcessLifecycleOwner must be touched on the main thread.
         Handler(Looper.getMainLooper()).post {
-            ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
-                override fun onStart(owner: LifecycleOwner) = onForeground(true)
-                override fun onStop(owner: LifecycleOwner) = onForeground(false)
-            })
+            ProcessLifecycleOwner.get()
+                .lifecycle
+                .addObserver(
+                    object : DefaultLifecycleObserver {
+                        override fun onStart(owner: LifecycleOwner) = onForeground(true)
+
+                        override fun onStop(owner: LifecycleOwner) = onForeground(false)
+                    }
+                )
         }
     }
 
@@ -128,16 +138,21 @@ class ReadingSessionTracker @Inject constructor(
     // --- shared ---
 
     /** Close the open session (if any) and queue it. */
-    @Synchronized
-    fun end() = endLocked()
+    @Synchronized fun end() = endLocked()
 
-    /** Send every queued session. Returns true if any remain (so the sync worker retries). */
-    suspend fun flushPending(): Boolean = sends.withLock {
-        for (entity in dao.all()) {
-            send(entity)
+    /** Send the current account's queue while serializing reader checkpoints. */
+    suspend fun flushPending(): Boolean =
+        sends.withLock {
+            val user = session.currentUser?.id ?: return@withLock false
+            for (entity in mine(user)) {
+                send(entity)
+            }
+            mine(user).isNotEmpty()
         }
-        dao.all().isNotEmpty()
-    }
+
+    /** Rows queued before owners were recorded have none and go out with whoever is signed in. */
+    private suspend fun mine(user: Int) =
+        dao.all().filter { it.userId == null || it.userId == user }
 
     @Synchronized
     private fun onForeground(foreground: Boolean) {
@@ -164,39 +179,45 @@ class ReadingSessionTracker @Inject constructor(
 
     private fun persistAndSend(snap: SessionSnapshot) {
         if (snap.durationSeconds < MIN_SESSION_SECONDS) return
-        val entity = PendingReadingSessionEntity(
-            sessionId = snap.sessionId,
-            fileId = snap.fileId,
-            sessionType = snap.type.wire,
-            startedAt = snap.startedAtMs,
-            endedAt = snap.endedAtMs,
-            durationSeconds = snap.durationSeconds,
-            progressDelta = snap.progressDelta,
-            endProgress = snap.endProgress,
-        )
+        val entity =
+            PendingReadingSessionEntity(
+                sessionId = snap.sessionId,
+                fileId = snap.fileId,
+                sessionType = snap.type.wire,
+                startedAt = snap.startedAtMs,
+                endedAt = snap.endedAtMs,
+                durationSeconds = snap.durationSeconds,
+                progressDelta = snap.progressDelta,
+                endProgress = snap.endProgress,
+                userId = session.currentUser?.id,
+            )
         snapshots.trySend(entity)
     }
 
     private suspend fun send(e: PendingReadingSessionEntity) {
-        val body = SaveReadingSession(
-            sessionId = e.sessionId,
-            startedAt = Instant.ofEpochMilli(e.startedAt).toString(),
-            endedAt = Instant.ofEpochMilli(e.endedAt).toString(),
-            durationSeconds = e.durationSeconds,
-            progressDelta = e.progressDelta,
-            endProgress = e.endProgress,
-            sessionType = e.sessionType,
-            source = SOURCE,
-        )
+        val user = session.currentUser?.id ?: return
+        if (e.userId != null && e.userId != user) return
+        val body =
+            SaveReadingSession(
+                sessionId = e.sessionId,
+                startedAt = Instant.ofEpochMilli(e.startedAt).toString(),
+                endedAt = Instant.ofEpochMilli(e.endedAt).toString(),
+                durationSeconds = e.durationSeconds,
+                progressDelta = e.progressDelta,
+                endProgress = e.endProgress,
+                sessionType = e.sessionType,
+                source = SOURCE,
+            )
         try {
             api.saveReadingSession(e.fileId, body)
-            Log.d(TAG, "sent ${e.sessionType} session ${e.sessionId} file=${e.fileId} ${e.durationSeconds}s end=${e.endProgress}",
+            Log.d(
+                TAG,
+                "sent ${e.sessionType} session ${e.sessionId} file=${e.fileId} ${e.durationSeconds}s end=${e.endProgress}",
             )
             dao.deleteIfUnchanged(e.sessionId, e.endedAt)
         } catch (t: HttpException) {
-            // A 4xx other than authentication/timeout/rate-limit won't succeed on retry (e.g. the
-            // file was removed).
-            if (t.code() in 400..499 && t.code() != 401 && t.code() != 408 && t.code() != 429) {
+            // A permanent rejection won't succeed on retry (e.g. the file was removed).
+            if (isPermanentRejection(t.code())) {
                 Log.w(TAG, "dropping session ${e.sessionId}: HTTP ${t.code()}")
                 dao.deleteIfUnchanged(e.sessionId, e.endedAt)
             } else {

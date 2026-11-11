@@ -4,8 +4,8 @@
 
 - `origin` 指向 `https://github.com/MorningTider/bookorbit-android.git`。
 - `upstream` 指向 `https://github.com/deranjer/bookorbit-android.git`。
-- 当前基线为 `0.7.1`，提交 `18335ca80a1dec76997eefdcb3871877670f68b2`。
-- 本轮定制分支为 `custom/bookorbit-android-v0.7.1`，上游 `main` 保留。
+- 当前基线为官方 `v0.8.0`，提交 `9cbc76a7c8b1a5a4e6453484ee46eba768b1a6d1`。
+- 定制分支沿用 `custom/bookorbit-android-v0.7.1`，0.8整合分支为 `upgrade/upstream-v0.8.0`。分支名保留历史，实际基线以上述tag为准。
 
 ## 升级步骤
 
@@ -26,7 +26,7 @@ node --test compat-tests/*.test.mjs
 ./gradlew :app:testFullDebugUnitTest :app:testFdroidDebugUnitTest :app:lintFullDebug :app:lintFdroidDebug :app:assembleFullDebug :app:assembleFdroidDebug
 ```
 
-当前初始检出为精确浅检出，联网合并其他历史前先运行 `git fetch --unshallow origin`。获取完整历史后才判断合并关系。不要重建 fork、覆盖定制分支或强推共享历史。
+当前已获取升级所需历史。若未来检出为浅克隆，先确认 `git rev-parse --is-shallow-repository`，再按需获取完整历史。不要重建 fork、覆盖定制分支或强推共享历史。
 
 密钥、登录信息、真实图书、APK、构建目录和本机 `local.properties` 留在 Git 跟踪之外。现有自用包使用本机调试签名，正式分发签名和公开发行单独处理。
 
@@ -46,3 +46,11 @@ node --test compat-tests/*.test.mjs
 安装标识回归运行 `com.bookorbit.app.AppBrandingTest`，Full与F-Droid分别检查实际名称、中英文资源、普通与圆形图标。主名称为BookOrbit，背景为蓝色 `#2563EB`，前景为白色轨道。上游合并后检查 `src/debug` 是否重新覆盖这些主资源。
 
 共享评论升级需同时核对服务端生成迁移、DTO中的可空权限字段、回复归属、删除权限、幂等ID，以及切换书籍/讨论时旧请求不能覆盖新目标。真实页码需检查根资源引用计数，后台排版释放不能撤销正在阅读章节的Blob。服务端书架按最近阅读格式选取进度，手机显示保留一位小数。
+
+## 0.8与服务端3.7验收
+
+上游两处冲突为版本号和阅读会话仓库。保留801版本码、兼容标识与定制串行检查点，合入官方离线队列归属。除页面和引擎验收外，同时执行DatabaseUpgradeTest。3.7旧进度、智能书架和部分统计端点受到App Attest保护，Android通过CompatibleApiService调用公开等价接口。认证与权限失败继续返回调用方。
+
+Server37IntegrationTest采用可选隔离凭据文件，在目标测试应用私有files目录中提供server37-validation.json。字段为url、username、password、bookId、fileId和scopeId，账号前缀为android08_。使用独立原生服务、数据库和自制EPUB，经普通setup、书库、上传和智能书架API准备。凭据经SSH传输，设备使用adb reverse接入本机回环通道，验收后清除两端文件、临时数据库、账号、应用进程与通道。禁止使用生产账号或生产书目作为此测试夹具。
+
+这项接口联调与用户手机的阅读位置、网页接续和流畅度验收分别记录。当前证据见VALIDATION.md。

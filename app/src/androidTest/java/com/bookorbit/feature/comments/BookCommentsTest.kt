@@ -4,6 +4,7 @@ import androidx.activity.ComponentActivity
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import com.bookorbit.R
 import com.bookorbit.core.di.NetworkModule
 import com.bookorbit.core.model.BookComment
 import com.bookorbit.core.model.BookCommentPage
@@ -95,30 +96,47 @@ class BookCommentsTest {
             compose.waitUntil(5000) {
                 compose.onAllNodesWithText("已存在的书评").fetchSemanticsNodes().isNotEmpty()
             }
-            compose.onNodeWithText("写下你的评论").performTextInput("我的书评")
-            compose.onNodeWithText("发送").performClick()
+            compose
+                .onNodeWithText(compose.activity.getString(R.string.comments_write))
+                .performTextInput("我的书评")
+            compose
+                .onNodeWithText(compose.activity.getString(R.string.comments_send))
+                .performClick()
             compose.waitUntil(5000) { vm.ui.value.error }
             assertEquals("我的书评", vm.ui.value.draft)
-            compose.onNodeWithText("发送").performClick()
+            compose
+                .onNodeWithText(compose.activity.getString(R.string.comments_send))
+                .performClick()
             compose.waitUntil(5000) { vm.ui.value.items.any { it.body == "我的书评" } }
             assertEquals(submissions[0].clientId, submissions[1].clientId)
             compose.onNodeWithTag("book-comments-list").performScrollToNode(hasText("已存在的书评"))
             compose
-                .onNode(hasText("查看回复") and hasAnyAncestor(hasTestTag("book-comment-1")))
+                .onNode(
+                    hasText(compose.activity.getString(R.string.comments_thread)) and
+                        hasAnyAncestor(hasTestTag("book-comment-1"))
+                )
                 .performScrollTo()
                 .assertIsDisplayed()
                 .performClick()
             compose.waitUntil(5000) { vm.ui.value.thread?.id == 1 && !vm.ui.value.loading }
-            compose.onNodeWithText("写下你的评论").performTextInput("回复正文")
-            compose.onNodeWithText("发送").performClick()
+            compose
+                .onNodeWithText(compose.activity.getString(R.string.comments_write))
+                .performTextInput("回复正文")
+            compose
+                .onNodeWithText(compose.activity.getString(R.string.comments_send))
+                .performClick()
             compose.waitUntil(5000) { vm.ui.value.items.any { it.body == "回复正文" } }
             assertEquals(1, submissions.last().parentId)
-            compose.onNodeWithTag("book-comments-list").performScrollToNode(hasText("删除"))
-            compose.onNodeWithText("删除").performClick()
-            compose.onNodeWithText("删除这条评论？").assertExists()
-            compose.onNodeWithText("取消").performClick()
+            compose
+                .onNodeWithTag("book-comments-list")
+                .performScrollToNode(hasText(compose.activity.getString(R.string.delete)))
+            compose.onNodeWithText(compose.activity.getString(R.string.delete)).performClick()
+            compose
+                .onNodeWithText(compose.activity.getString(R.string.comments_delete_title))
+                .assertExists()
+            compose.onNodeWithText(compose.activity.getString(R.string.cancel)).performClick()
             assertEquals(1, replies.size)
-            compose.onNodeWithText("删除").performClick()
+            compose.onNodeWithText(compose.activity.getString(R.string.delete)).performClick()
             compose.onNodeWithTag("confirm-comment-delete").performClick()
             compose.waitUntil(5000) { replies.isEmpty() && !vm.ui.value.sending }
         } finally {

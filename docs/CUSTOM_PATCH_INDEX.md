@@ -61,4 +61,11 @@
 
 ## BA-C29
 
-`CompatibleApiService`在Hilt网络入口包装原Retrofit接口。`ServerCompatibility`声明3.7公共DTO。阅读器、详情和智能书架调用继续复用`ApiService`。`CompatibleApiServiceTest`覆盖3.7传输、旧路由兼容、错误保留、分页和统计失败，`ReaderSyncHttpTest`覆盖既有跨端读取流程。当前8项专项测试通过。
+`CompatibleApiService`在Hilt网络入口包装原Retrofit接口。`ServerCompatibility`声明3.7公共DTO。阅读器、详情和智能书架调用继续复用`ApiService`。`CompatibleApiServiceTest`覆盖3.7传输、旧路由兼容、错误保留、分页和统计失败，`ReaderSyncHttpTest`覆盖既有跨端读取流程。7项适配器测试和1项既有HTTP同步测试通过。Server37IntegrationTest经真实NAS隔离服务验证公共进度、智能书架、统计、会话和评论，默认未准备隔离凭据时跳过。
+
+## 官方0.8合并保留点
+
+- Room版本8及MIGRATION_7_8必须与DatabaseModule一同迁入。DatabaseUpgradeTest使用旧版SQLite结构验证5至8和7至8，保留下载字节、路径、进度和离线队列。
+- ReadingSessionTracker保留Channel与Mutex串行检查点，再合入userId归属和isPermanentRejection。读取队列时发生账号切换的回归位于ReadingSessionTrackerTest。
+- ReaderTocSheet的倒序使用SwapVert图标和无障碍标签，章节数量与页签单行限制防止大字号英文挤占目录。ReaderInteractionTest在320dp、1.5倍字号核对当前章、搜索、系统边距和底部导航。
+- BookCommentsTest使用资源键定位控件，支持英文与中文系统。两个0.8新增设置键保留中英文和格式参数。

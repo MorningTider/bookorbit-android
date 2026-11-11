@@ -16,6 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.isDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onLast
@@ -190,6 +191,7 @@ class ReaderInteractionTest {
         showSettings = false
         showContents = true
         show()
+        compose.waitUntil(5000) { compose.onNodeWithText("第42章 山间清风").isDisplayed() }
         compose.onNodeWithText("第42章 山间清风").assertIsDisplayed().assertIsSelected()
         compose.onAllNodesWithTag("reader-bottom-navigation").onLast().assertIsDisplayed()
         screenshot("contents")
@@ -202,6 +204,11 @@ class ReaderInteractionTest {
         screenshot("contents-search")
         val chapterCount =
             compose.onNodeWithText(compose.activity.getString(R.string.rs_chapter_count, 100))
+        chapterCount.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { action ->
+            val results = mutableListOf<androidx.compose.ui.text.TextLayoutResult>()
+            action(results)
+            assertEquals("Chapter count must stay on one line", 1, results.single().lineCount)
+        }
         val countTop = chapterCount.fetchSemanticsNode().boundsInWindow.top
         compose.runOnIdle {
             val insets =

@@ -14,6 +14,7 @@ import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -164,6 +165,8 @@ fun ReaderTocSheet(
                                     .clickable { tab = index }
                                     .padding(vertical = 10.dp),
                                 fontSize = 16.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
                                 fontWeight =
                                     if (tab == index) FontWeight.Bold else FontWeight.Normal,
                                 color =
@@ -183,6 +186,8 @@ fun ReaderTocSheet(
                         stringResource(R.string.rs_chapter_count, flat.size),
                         Modifier.weight(1f),
                         fontSize = 13.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
                     IconButton(onClick = { searching = !searching }) {
                         Icon(
@@ -201,13 +206,19 @@ fun ReaderTocSheet(
                             Modifier.size(20.dp),
                         )
                     }
-                    TextButton(onClick = { reversed = !reversed }) {
-                        Text(
+                    IconButton(
+                        onClick = { reversed = !reversed },
+                        modifier = Modifier.semantics { selected = reversed },
+                    ) {
+                        Icon(
+                            Icons.Default.SwapVert,
                             stringResource(
                                 if (reversed) R.string.rs_toc_ascending
                                 else R.string.rs_toc_descending
                             ),
-                            fontSize = 13.sp,
+                            tint =
+                                if (reversed) readerPalette(settings).accent
+                                else MaterialTheme.colorScheme.onSurface,
                         )
                     }
                 }

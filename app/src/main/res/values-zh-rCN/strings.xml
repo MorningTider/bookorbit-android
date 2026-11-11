@@ -557,4 +557,6 @@
     <string name="comments_deleted">评论已删除</string>
     <string name="comments_reply">回复</string>
     <string name="comments_thread">查看回复</string>
+    <string name="settings_previous_button">耳机／蓝牙上一首按键</string>
+    <string name="settings_skip_seconds">%1$s：%2$d 秒</string>
 </resources>

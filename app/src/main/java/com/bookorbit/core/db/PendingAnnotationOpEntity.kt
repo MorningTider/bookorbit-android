@@ -38,6 +38,12 @@ data class PendingAnnotationOpEntity(
     val chapterTitle: String? = null,
     val bookFileId: Int? = null,
     val createdAt: Long = System.currentTimeMillis(),
+    /**
+     * Account that made the change. It is sent only while that account is signed in, so another
+     * account signing in on this device never receives it. Null for rows queued before this was
+     * recorded: those go out with whoever is signed in.
+     */
+    val userId: Int? = null,
 )
 
 @Dao
@@ -56,6 +62,9 @@ interface PendingAnnotationOpDao {
 
     @Query("SELECT * FROM pending_annotation_ops WHERE kind = :kind AND annotationId = :annotationId LIMIT 1")
     suspend fun find(kind: String, annotationId: Int): PendingAnnotationOpEntity?
+
+    @Query("SELECT * FROM pending_annotation_ops WHERE id = :id")
+    suspend fun get(id: Long): PendingAnnotationOpEntity?
 
     @Query("DELETE FROM pending_annotation_ops WHERE id = :id")
     suspend fun delete(id: Long)
