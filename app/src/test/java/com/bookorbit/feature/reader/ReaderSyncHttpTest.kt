@@ -6,6 +6,7 @@ import com.bookorbit.core.di.NetworkModule
 import com.bookorbit.core.model.FileProgress
 import com.bookorbit.core.model.SaveFileProgress
 import com.bookorbit.core.network.ApiService
+import com.bookorbit.core.network.CompatibleApiService
 import com.bookorbit.core.sync.SyncScheduler
 import io.mockk.coEvery
 import io.mockk.mockk
@@ -52,12 +53,13 @@ class ReaderSyncHttpTest {
             }
         server.start()
         try {
-            val api =
+            val rawApi =
                 Retrofit.Builder()
                     .baseUrl(server.url("/api/v1/"))
                     .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
                     .build()
                     .create(ApiService::class.java)
+            val api = CompatibleApiService(rawApi, json)
             val dao = mockk<ReaderProgressDao>()
             var row: ReaderProgressEntity? = null
             coEvery { dao.get(1) } answers { row }

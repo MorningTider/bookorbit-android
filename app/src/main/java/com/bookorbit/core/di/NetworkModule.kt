@@ -1,11 +1,12 @@
 package com.bookorbit.core.di
 
-import com.bookorbit.BuildConfig
 import android.content.Context
 import coil.ImageLoader
+import com.bookorbit.BuildConfig
 import com.bookorbit.core.network.ApiService
 import com.bookorbit.core.network.AuthInterceptor
 import com.bookorbit.core.network.BaseUrlInterceptor
+import com.bookorbit.core.network.CompatibleApiService
 import com.bookorbit.core.network.ImageClient
 import com.bookorbit.core.network.MainClient
 import com.bookorbit.core.network.PersistentCookieJar
@@ -13,18 +14,18 @@ import com.bookorbit.core.network.RefreshClient
 import com.bookorbit.core.network.TokenAuthenticator
 import com.bookorbit.core.network.UserCaTrust
 import dagger.Module
-import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.Provides
 import dagger.hilt.InstallIn
+import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
+import java.util.concurrent.TimeUnit
+import javax.inject.Singleton
 import kotlinx.serialization.json.Json
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import retrofit2.converter.kotlinx.serialization.asConverterFactory
-import java.util.concurrent.TimeUnit
-import javax.inject.Singleton
 
 @Module
 @InstallIn(SingletonComponent::class)
@@ -43,11 +44,12 @@ object NetworkModule {
     @Singleton
     fun provideLoggingInterceptor(): HttpLoggingInterceptor =
         HttpLoggingInterceptor().apply {
-            level = if (BuildConfig.DEBUG) {
-                HttpLoggingInterceptor.Level.BASIC
-            } else {
-                HttpLoggingInterceptor.Level.NONE
-            }
+            level =
+                if (BuildConfig.DEBUG) {
+                    HttpLoggingInterceptor.Level.BASIC
+                } else {
+                    HttpLoggingInterceptor.Level.NONE
+                }
         }
 
     @Provides
@@ -57,12 +59,14 @@ object NetworkModule {
         cookieJar: PersistentCookieJar,
         logging: HttpLoggingInterceptor,
         userCaTrust: UserCaTrust,
-    ): OkHttpClient = userCaTrust.applyTo(OkHttpClient.Builder())
-        .cookieJar(cookieJar)
-        .addInterceptor(logging)
-        .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(30, TimeUnit.SECONDS)
-        .build()
+    ): OkHttpClient =
+        userCaTrust
+            .applyTo(OkHttpClient.Builder())
+            .cookieJar(cookieJar)
+            .addInterceptor(logging)
+            .connectTimeout(15, TimeUnit.SECONDS)
+            .readTimeout(30, TimeUnit.SECONDS)
+            .build()
 
     @Provides
     @Singleton
@@ -74,17 +78,20 @@ object NetworkModule {
         authenticator: TokenAuthenticator,
         logging: HttpLoggingInterceptor,
         userCaTrust: UserCaTrust,
-    ): OkHttpClient = userCaTrust.applyTo(OkHttpClient.Builder())
-        .cookieJar(cookieJar)
-        .addInterceptor(baseUrlInterceptor)
-        .addInterceptor(authInterceptor)
-        .addInterceptor(logging)
-        .authenticator(authenticator)
-        .connectTimeout(15, TimeUnit.SECONDS)
-        // Also carries file downloads (serveFile/serveCover): large audiobook files can go quiet
-        // for longer than a typical API call between reads, especially on slow/mobile networks.
-        .readTimeout(60, TimeUnit.SECONDS)
-        .build()
+    ): OkHttpClient =
+        userCaTrust
+            .applyTo(OkHttpClient.Builder())
+            .cookieJar(cookieJar)
+            .addInterceptor(baseUrlInterceptor)
+            .addInterceptor(authInterceptor)
+            .addInterceptor(logging)
+            .authenticator(authenticator)
+            .connectTimeout(15, TimeUnit.SECONDS)
+            // Also carries file downloads (serveFile/serveCover): large audiobook files can go
+            // quiet
+            // for longer than a typical API call between reads, especially on slow/mobile networks.
+            .readTimeout(60, TimeUnit.SECONDS)
+            .build()
 
     @Provides
     @Singleton
@@ -94,38 +101,35 @@ object NetworkModule {
         authInterceptor: AuthInterceptor,
         logging: HttpLoggingInterceptor,
         userCaTrust: UserCaTrust,
-    ): OkHttpClient = userCaTrust.applyTo(OkHttpClient.Builder())
-        .cookieJar(cookieJar)
-        .addInterceptor(authInterceptor)
-        .addInterceptor(logging)
-        .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(30, TimeUnit.SECONDS)
-        .build()
+    ): OkHttpClient =
+        userCaTrust
+            .applyTo(OkHttpClient.Builder())
+            .cookieJar(cookieJar)
+            .addInterceptor(authInterceptor)
+            .addInterceptor(logging)
+            .connectTimeout(15, TimeUnit.SECONDS)
+            .readTimeout(30, TimeUnit.SECONDS)
+            .build()
 
     @Provides
     @Singleton
     fun provideImageLoader(
         @ApplicationContext context: Context,
         @ImageClient client: OkHttpClient,
-    ): ImageLoader = ImageLoader.Builder(context)
-        .okHttpClient(client)
-        .crossfade(true)
-        .build()
+    ): ImageLoader = ImageLoader.Builder(context).okHttpClient(client).crossfade(true).build()
 
     @Provides
     @Singleton
-    fun provideRetrofit(
-        @MainClient client: OkHttpClient,
-        json: Json,
-    ): Retrofit = Retrofit.Builder()
-        // Throwaway base; BaseUrlInterceptor rewrites host + prepends /api/v1 at request time.
-        .baseUrl("http://localhost/")
-        .client(client)
-        .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
-        .build()
+    fun provideRetrofit(@MainClient client: OkHttpClient, json: Json): Retrofit =
+        Retrofit.Builder()
+            // Throwaway base; BaseUrlInterceptor rewrites host + prepends /api/v1 at request time.
+            .baseUrl("http://localhost/")
+            .client(client)
+            .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
+            .build()
 
     @Provides
     @Singleton
-    fun provideApiService(retrofit: Retrofit): ApiService =
-        retrofit.create(ApiService::class.java)
+    fun provideApiService(retrofit: Retrofit, json: Json): ApiService =
+        CompatibleApiService(retrofit.create(ApiService::class.java), json)
 }

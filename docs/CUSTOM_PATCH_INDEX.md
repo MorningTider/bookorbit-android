@@ -58,3 +58,7 @@
 - `ReadingDisplay`统一进度精度，`BookDetailRepository/ViewModel`合并本机检查点时比较读取快照，避免依赖设备与服务器时钟一致。书架恢复先等待已排队的读取报告，按页批量查询Room，每批最多900个文件。
 - `reader-pagination.js`复用同一Paginator配置与字体逐章测量，`ReaderBridge.Pages`传递真实页码。章节加载器的根引用与并发创建经过独立回归。
 - `ReaderEngineTest`覆盖正文/顶部标题、整本页数、快速跨章后定位和字体就绪；`BookCommentsTest`覆盖公开书评、失败重试、回复和删除确认。
+
+## BA-C29
+
+`CompatibleApiService`在Hilt网络入口包装原Retrofit接口。`ServerCompatibility`声明3.7公共DTO。阅读器、详情和智能书架调用继续复用`ApiService`。`CompatibleApiServiceTest`覆盖3.7传输、旧路由兼容、错误保留、分页和统计失败，`ReaderSyncHttpTest`覆盖既有跨端读取流程。当前8项专项测试通过。
