@@ -32,6 +32,8 @@ data class OpenParams(
     val fraction: Double?,
     val settings: ReaderSettings,
     val fontFaces: List<ReaderFontFace> = emptyList(),
+    val title: String = "",
+    val author: String = "",
 )
 
 @Serializable
@@ -41,6 +43,8 @@ private data class OpenMeta(
     val fraction: Double?,
     val settings: ReaderSettings,
     val fontFaces: List<ReaderFontFace> = emptyList(),
+    val title: String = "",
+    val author: String = "",
 )
 
 // Base64 is streamed in slices so a large book never rides in a single evaluateJavascript call.
@@ -304,7 +308,7 @@ class ReaderController {
         updatePageAppearance(params.settings)
         lastFonts = params.fontFaces
         val meta =
-            OpenMeta(params.format, params.cfi, params.fraction, params.settings, params.fontFaces)
+            OpenMeta(params.format, params.cfi, params.fraction, params.settings, params.fontFaces, params.title, params.author)
         val metaJson = ReaderBridge.json.encodeToString(OpenMeta.serializer(), meta)
         eval(ReaderBridge.jsBegin(metaJson))
 

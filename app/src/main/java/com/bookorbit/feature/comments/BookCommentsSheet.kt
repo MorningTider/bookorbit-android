@@ -58,23 +58,23 @@ fun BookCommentsSheet(
                 TextButton(onClick = { vm.thread(null) }, enabled = !state.sending) {
                     Text(stringResource(R.string.comments_back))
                 }
-            if (state.error) {
-                Text(
-                    stringResource(
-                        if (state.unsupported) R.string.comments_upgrade
-                        else R.string.comments_error
-                    ),
-                    color = MaterialTheme.colorScheme.error,
-                )
-                TextButton(onClick = { vm.load() }, enabled = !state.loading) {
-                    Text(stringResource(R.string.retry))
-                }
-            }
             LazyColumn(
                 Modifier.weight(1f).testTag("book-comments-list"),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 contentPadding = PaddingValues(vertical = 12.dp),
             ) {
+                if (state.error) item(key = "request-error") {
+                    Text(
+                        stringResource(
+                            if (state.unsupported) R.string.comments_upgrade
+                            else R.string.comments_error
+                        ),
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                    TextButton(onClick = { vm.load() }, enabled = !state.loading) {
+                        Text(stringResource(R.string.retry))
+                    }
+                }
                 state.thread?.let { root ->
                     item(key = "root") {
                         CommentRow(

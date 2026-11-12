@@ -32,6 +32,7 @@ class ReaderViewModel @Inject constructor(
     private val source: ReaderSource,
     private val progress: ReaderProgressRepository,
     private val settingsStore: ReaderSettingsStore,
+    private val preferenceSync: ReaderPreferenceSync,
     val fontRepository: ReaderFontRepository,
     private val sessions: ReadingSessionTracker,
     private val annotationRepo: ReaderAnnotationRepository,
@@ -45,6 +46,7 @@ class ReaderViewModel @Inject constructor(
         val format: String,
         val fileId: Int,
         val initial: InitialProgress,
+        val textTitle: String? = null,
     )
 
     /** Text the user has selected in the page, not yet saved as a highlight. */
@@ -68,6 +70,9 @@ class ReaderViewModel @Inject constructor(
         val description: String = "",
         val resolved: ResolvedOpen? = null,
         val settings: ReaderSettings = ReaderSettings(),
+        val perBookSettings: Boolean = false,
+        val syncSettings: Boolean = false,
+        val settingsPending: Boolean = false,
         val fonts: List<ReaderFontFamily> = emptyList(),
         val fontFaces: List<ReaderFontFace> = emptyList(),
         val fontsLoading: Boolean = false,
@@ -164,12 +169,22 @@ class ReaderViewModel @Inject constructor(
                         .getOrDefault(historicalStats)
                 }
                 val resolved = source.resolve(book)
+                val profile = preferenceSync.load(resolved.fileId, settings, resolved.format.lowercase() != "cbz")
+                val fonts = fontRepository.catalog(false)
+                val selected = fonts.firstOrNull { it.cssFamily == profile.settings.fontFamily }
+                if (selected != null && !selected.downloaded) runCatching { fontRepository.download(selected) }
+                val faces = fontRepository.cachedFaces(selected)
                 val initial = progress.resolveInitial(resolved.fileId)
                 historicalStats = history.await()
                 _ui.update {
                     it.copy(
                         loadingFile = false,
-                        resolved = ResolvedOpen(resolved.ref, resolved.format, resolved.fileId, initial),
+                        settings = profile.settings,
+                        perBookSettings = profile.perBook,
+                        syncSettings = profile.sync,
+                        settingsPending = profile.pending,
+                        fontFaces = faces,
+                        resolved = ResolvedOpen(resolved.ref, resolved.format, resolved.fileId, initial, book.files.firstOrNull { f -> f.id == resolved.fileId }?.filename?.substringBeforeLast('.')),
                     )
                 }
             } catch (e: Exception) {
@@ -434,13 +449,59 @@ class ReaderViewModel @Inject constructor(
     }
 
     fun onError(message: String) {
-        _ui.update { it.copy(error = UiText.raw(message)) }
+        val resource = when (message) {
+            "TXT_SIZE" -> R.string.reader_txt_size
+            "TXT_ENCODING" -> R.string.reader_txt_encoding
+            "TXT_SECTIONS" -> R.string.reader_txt_sections
+            "TXT_LINE" -> R.string.reader_txt_line
+            "TXT_EMPTY" -> R.string.reader_txt_empty
+            else -> null
+        }
+        _ui.update { it.copy(error = resource?.let { id -> UiText.of(id) } ?: UiText.raw(message)) }
     }
 
     fun updateSettings(settings: ReaderSettings) {
+        val before = _ui.value
         _ui.update { it.copy(settings = settings) }
+        val fileId = before.resolved?.fileId ?: return
+        preferenceSync.enqueueSave(fileId, before.settings, settings, before.perBookSettings, before.syncSettings)
+        if (!before.perBookSettings) viewModelScope.launch { settingsStore.save(settings) }
+        syncSettingsLater()
+    }
+
+    private fun syncSettingsLater() {
         settingsSaveJob?.cancel()
-        settingsSaveJob = viewModelScope.launch { settingsStore.save(settings) }
+        settingsSaveJob = viewModelScope.launch {
+            kotlinx.coroutines.delay(600)
+            val success = preferenceSync.flush()
+            _ui.update { it.copy(settingsPending = !success) }
+        }
+    }
+
+    fun setSettingsScope(perBook: Boolean) {
+        val fileId = _ui.value.resolved?.fileId ?: return
+        viewModelScope.launch {
+            if (!perBook) {
+                preferenceSync.useDefaults(fileId, _ui.value.syncSettings)
+                val profile = preferenceSync.load(fileId, settingsStore.load())
+                _ui.update { it.copy(settings = profile.settings, perBookSettings = false, settingsPending = profile.pending) }
+                refreshFonts()
+            } else _ui.update { it.copy(perBookSettings = true) }
+        }
+    }
+
+    fun setSettingsSync(enabled: Boolean) {
+        val fileId = _ui.value.resolved?.fileId ?: return
+        viewModelScope.launch {
+            try {
+                preferenceSync.setSync(enabled)
+                val profile = preferenceSync.load(fileId, _ui.value.settings)
+                _ui.update { it.copy(settings = profile.settings, syncSettings = profile.sync, perBookSettings = profile.perBook, settingsPending = profile.pending) }
+                refreshFonts()
+            } catch (e: CancellationException) { throw e } catch (_: Exception) {
+                _ui.update { it.copy(message = UiText.of(R.string.rs_sync_failed)) }
+            }
+        }
     }
 
     fun refreshFonts() {
@@ -511,6 +572,7 @@ class ReaderViewModel @Inject constructor(
     }
 
     override fun onCleared() {
+        preferenceSync.flushOnClose()
         flush()
         sessions.end()
         super.onCleared()

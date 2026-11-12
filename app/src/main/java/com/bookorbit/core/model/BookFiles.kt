@@ -8,8 +8,8 @@ object BookFiles {
     /** Audio container formats handled by the player. */
     val AUDIO_FORMATS = setOf("m4b", "mp3", "m4a", "opus", "ogg", "flac", "aac", "wav")
 
-    /** Formats the in-app foliate reader can render (PDF excluded; azw/txt unreliable). */
-    val READER_SUPPORTED = setOf("epub", "mobi", "azw3", "fb2", "cbz")
+    /** Formats the in-app foliate reader can render (PDF uses its own renderer; encrypted AZW is excluded). */
+    val READER_SUPPORTED = setOf("epub", "mobi", "azw3", "fb2", "cbz", "txt")
 
     /**
      * Comic archives foliate can't open (it only understands ZIP). The server renders their pages as

@@ -1,5 +1,6 @@
 package com.bookorbit.core.network
 
+import com.bookorbit.feature.sources.*
 import com.bookorbit.core.model.AppInfo
 import com.bookorbit.core.model.ReadingProgressWrites
 import com.bookorbit.core.model.ReadingProgressList
@@ -69,6 +70,53 @@ import retrofit2.http.Streaming
  * Endpoints mirror the server's `/api/v1` REST surface one-to-one.
  */
 interface ApiService {
+    @GET("reader/defaults")
+    suspend fun readerDefaults(): Map<String, kotlinx.serialization.json.JsonObject>
+    @GET("reader/preferences/{id}")
+    suspend fun readerPreference(@Path("id") id: Int): com.bookorbit.feature.reader.ReaderPreferenceResponse
+    @PATCH("reader/defaults/epub")
+    suspend fun patchReaderDefault(@Body patch: com.bookorbit.feature.reader.ReaderPreferencePatch)
+    @PATCH("reader/preferences/{id}")
+    suspend fun patchReaderPreference(@Path("id") id: Int, @Body patch: com.bookorbit.feature.reader.ReaderPreferencePatch)
+    @DELETE("reader/preferences/{id}")
+    suspend fun deleteReaderPreference(@Path("id") id: Int)
+    @PATCH("users/me/reader-storage-mode")
+    suspend fun readerStorageMode(@Body body: kotlinx.serialization.json.JsonObject)
+
+    @GET("book-requests/default-destinations")
+    suspend fun sourceDestinations(): Map<String, SourceDestination>
+
+    @GET("book-sources/status")
+    suspend fun sourceStatus(): SourceStatus
+
+    @GET("book-sources/jobs")
+    suspend fun sourceJobs(@Query("cursor") cursor: Int? = null): SourceJobsPage
+
+    @POST("libraries/{id}/sources/{source}")
+    suspend fun acquireSource(@Path("id") libraryId: Int, @Path("source") source: String, @Body body: SourceAcquisition): SourceJob
+
+    @POST("imports/check")
+    suspend fun checkImports(@Body body: ImportCheck): List<ImportCheckResult>
+
+    @GET("imports/reviews/{id}")
+    suspend fun importReview(@Path("id") id: String): ImportReview
+
+    @POST("imports/reviews/{id}/resolve")
+    suspend fun resolveImport(@Path("id") id: String, @Body body: ImportResolution): kotlinx.serialization.json.JsonObject
+
+    @GET("imports/files/{id}/version")
+    suspend fun importFileVersion(@Path("id") id: Int): FileVersion
+
+    @POST("book-sources/jobs/{id}/cancel")
+    suspend fun cancelSourceJob(@Path("id") id: Int): SourceJob
+
+    @POST("book-sources/jobs/{id}/retry")
+    suspend fun retrySourceJob(@Path("id") id: Int): SourceJob
+
+    @DELETE("book-sources/jobs/{id}")
+    suspend fun deleteSourceJob(@Path("id") id: Int): SourceJob
+
+
     @GET("books/{bookId}/comments")
     suspend fun getBookComments(
         @Path("bookId") bookId: Int,

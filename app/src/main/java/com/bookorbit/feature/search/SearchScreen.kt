@@ -2,6 +2,11 @@ package com.bookorbit.feature.search
 
 import androidx.compose.ui.res.stringResource
 import com.bookorbit.R
+import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.material3.SecondaryTabRow
+import androidx.compose.material3.Tab
+import com.bookorbit.feature.sources.SourcesScreen
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -33,6 +38,7 @@ import coil.compose.AsyncImage
 import com.bookorbit.core.model.SearchResult
 import com.bookorbit.ui.LocalImageUrls
 
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun SearchScreen(
     onBookClick: (Int) -> Unit,
@@ -41,7 +47,16 @@ fun SearchScreen(
     val query by vm.query.collectAsStateWithLifecycle()
     val state by vm.state.collectAsStateWithLifecycle()
 
+    var sourceTab by rememberSaveable { mutableStateOf(false) }
     Column(modifier = Modifier.fillMaxSize()) {
+        SecondaryTabRow(selectedTabIndex = if (sourceTab) 1 else 0) {
+            Tab(selected = !sourceTab, onClick = { sourceTab = false }, text = { Text(stringResource(R.string.sources_local_tab)) })
+            Tab(selected = sourceTab, onClick = { sourceTab = true }, text = { Text(stringResource(R.string.sources_tab)) })
+        }
+        if (sourceTab) {
+            SourcesScreen(onBookClick)
+            return@Column
+        }
         OutlinedTextField(
             value = query,
             onValueChange = vm::onQueryChange,

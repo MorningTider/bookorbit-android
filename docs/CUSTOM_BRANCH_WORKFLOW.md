@@ -54,3 +54,12 @@ node --test compat-tests/*.test.mjs
 Server37IntegrationTest采用可选隔离凭据文件，在目标测试应用私有files目录中提供server37-validation.json。字段为url、username、password、bookId、fileId和scopeId，账号前缀为android08_。使用独立原生服务、数据库和自制EPUB，经普通setup、书库、上传和智能书架API准备。凭据经SSH传输，设备使用adb reverse接入本机回环通道，验收后清除两端文件、临时数据库、账号、应用进程与通道。禁止使用生产账号或生产书目作为此测试夹具。
 
 这项接口联调与用户手机的阅读位置、网页接续和流畅度验收分别记录。当前证据见VALIDATION.md。
+
+
+## custom.2升级保留点
+
+逐项复验BA-C30至BA-C33。服务器端TXT转换器或临时阅读缓存发生变更时，同时核对TXT适配器的编码、100000字符分段、h1/p结构、章节路径和CFI。保留节点与锚点互开测试，避免只比较百分比或章节序号。
+
+阅读偏好同步沿用服务端严格字段表，发送变化字段的PATCH。验重策略由服务器返回，未确认重复处理方式时不发送强制新建。封面经过服务器代理。新版本保留账号隔离的缓存、待同步记录以及页面退出后的持久写入。
+
+完整回归新增SourceContractTest、SourcesViewModelTest、ReaderSourceTest、SourceCoverUrlTest、ReaderPreferenceCodecTest、ReaderPreferenceSyncTest与SourcesScreenTest。保留纸张实际绘制帧、按住和松手、字体就绪及窄屏大字号检查。卷页使用postOnAnimation并限制单帧推进，延迟排版后仍需实际绘制中间纸张状态。排版缓存需核对textIndent与paragraphIndent的双向转换，包含断网重开。

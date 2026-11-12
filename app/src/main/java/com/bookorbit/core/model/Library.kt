@@ -7,6 +7,8 @@ data class Library(
     val id: Int,
     val name: String,
     val icon: String? = null,
+    val allowedFormats: List<String> = emptyList(),
+    val accessLevel: String? = null,
     val displayOrder: Int = 0,
     val bookCount: Int? = null,
     val folders: List<LibraryFolder> = emptyList(),

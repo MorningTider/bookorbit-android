@@ -15,6 +15,7 @@ data class AuthUser(
     val avatarUrl: String? = null,
     val provisioningMethod: String = "local",
     val permissions: List<String> = emptyList(),
+    val settings: AuthSettings = AuthSettings(),
 )
 
 @Serializable
@@ -61,3 +62,6 @@ data class OidcCallbackResponse(
     val accessToken: String,
     val user: AuthUser,
 )
+
+@Serializable
+data class AuthSettings(val syncReaderPreferences: Boolean = false)

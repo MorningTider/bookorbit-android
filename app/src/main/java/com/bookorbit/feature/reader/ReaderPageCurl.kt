@@ -1,7 +1,5 @@
 package com.bookorbit.feature.reader
 
-import android.animation.Animator
-import android.animation.AnimatorListenerAdapter
 import android.animation.ValueAnimator
 import android.content.Context
 import android.graphics.Bitmap
@@ -44,7 +42,7 @@ internal class ReaderPageCurlHost(
 
     private val page = ReaderPageCurlView(context)
     private val handler = Handler(Looper.getMainLooper())
-    private var animator: ValueAnimator? = null
+    private var animationFrame: Runnable? = null
     private var generation = 0L
     private var ready = false
     private var destinationReady = false
@@ -183,31 +181,42 @@ internal class ReaderPageCurlHost(
     }
 
     private fun animate(target: Float) {
-        animator?.removeAllListeners()
-        animator?.cancel()
-        animator =
-            ValueAnimator.ofFloat(page.progress, target).apply {
-                duration =
-                    if (ValueAnimator.areAnimatorsEnabled())
-                        (260 * kotlin.math.abs(target - page.progress)).toLong().coerceAtLeast(80)
-                    else 0
-                interpolator = FastOutSlowInInterpolator()
-                addUpdateListener {
-                    val value = it.animatedValue as Float
+        animationFrame?.let(page::removeCallbacks)
+        animationFrame = null
+        val from = page.progress
+        val durationMs =
+            if (ValueAnimator.areAnimatorsEnabled())
+                (260 * kotlin.math.abs(target - from)).toLong().coerceAtLeast(80)
+            else 0L
+        val token = generation
+        val easing = FastOutSlowInInterpolator()
+        var elapsedMs = 0f
+        var previousFrameNanos = System.nanoTime()
+        val frame =
+            object : Runnable {
+                override fun run() {
+                    if (token != generation || !isTurning || animationFrame !== this) return
+                    val now = System.nanoTime()
+                    // WebView layout can delay a frame. Keep the fold visible instead of
+                    // jumping to its final position after the delayed layout finishes.
+                    elapsedMs += ((now - previousFrameNanos) / 1_000_000f).coerceIn(0f, 32f)
+                    previousFrameNanos = now
+                    val fraction = if (durationMs == 0L) 1f else min(1f, elapsedMs / durationMs)
+                    val value = from + (target - from) * easing.getInterpolation(fraction)
                     page.progress =
                         if (state == Turn.FINISHING && !destinationReady) min(value, .92f)
                         else value
-                }
-                addListener(
-                    object : AnimatorListenerAdapter() {
-                        override fun onAnimationEnd(animation: Animator) {
-                            if (state == Turn.RESTORING && destinationReady) restore()
-                            else if (state == Turn.FINISHING && destinationReady) finish(true)
-                        }
+                    if (fraction < 1f) {
+                        page.postOnAnimation(this)
+                    } else {
+                        animationFrame = null
+                        if (state == Turn.RESTORING && destinationReady) restore()
+                        else if (state == Turn.FINISHING && destinationReady) finish(true)
                     }
-                )
-                start()
+                }
             }
+        animationFrame = frame
+        page.postOnAnimation(frame)
     }
 
     fun relocated() {
@@ -226,10 +235,10 @@ internal class ReaderPageCurlHost(
                     when (state) {
                         Turn.RESTORING ->
                             if (restoreRequested) finish(false)
-                            else if (animator?.isRunning != true) restore()
+                            else if (animationFrame == null) restore()
                         Turn.FINISHING ->
                             if (page.visibility != View.VISIBLE) finish(true)
-                            else if (animator?.isRunning != true) animate(1f)
+                            else if (animationFrame == null) animate(1f)
                         else -> Unit
                     }
                 }
@@ -247,9 +256,8 @@ internal class ReaderPageCurlHost(
         generation++
         state = Turn.IDLE
         handler.removeCallbacks(recover)
-        animator?.removeAllListeners()
-        animator?.cancel()
-        animator = null
+        animationFrame?.let(page::removeCallbacks)
+        animationFrame = null
         page.release()
         controller.finishPageTurn(committed)
         scheduleWarmup()

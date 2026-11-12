@@ -101,11 +101,14 @@ class BookCommentsTest {
                 .performTextInput("我的书评")
             compose
                 .onNodeWithText(compose.activity.getString(R.string.comments_send))
+                .also { waitForStableTouchTarget(compose.activity.getString(R.string.comments_send)) }
                 .performClick()
-            compose.waitUntil(5000) { vm.ui.value.error }
+            compose.waitUntil(5000) { vm.ui.value.error && !vm.ui.value.sending }
+            compose.waitForIdle()
             assertEquals("我的书评", vm.ui.value.draft)
             compose
                 .onNodeWithText(compose.activity.getString(R.string.comments_send))
+                .also { waitForStableTouchTarget(compose.activity.getString(R.string.comments_send)) }
                 .performClick()
             compose.waitUntil(5000) { vm.ui.value.items.any { it.body == "我的书评" } }
             assertEquals(submissions[0].clientId, submissions[1].clientId)
@@ -124,18 +127,21 @@ class BookCommentsTest {
                 .performTextInput("回复正文")
             compose
                 .onNodeWithText(compose.activity.getString(R.string.comments_send))
+                .also { waitForStableTouchTarget(compose.activity.getString(R.string.comments_send)) }
                 .performClick()
             compose.waitUntil(5000) { vm.ui.value.items.any { it.body == "回复正文" } }
             assertEquals(1, submissions.last().parentId)
             compose
                 .onNodeWithTag("book-comments-list")
                 .performScrollToNode(hasText(compose.activity.getString(R.string.delete)))
+            waitForStableTouchTarget(compose.activity.getString(R.string.delete), scroll = true)
             compose.onNodeWithText(compose.activity.getString(R.string.delete)).performClick()
             compose
                 .onNodeWithText(compose.activity.getString(R.string.comments_delete_title))
                 .assertExists()
             compose.onNodeWithText(compose.activity.getString(R.string.cancel)).performClick()
             assertEquals(1, replies.size)
+            waitForStableTouchTarget(compose.activity.getString(R.string.delete), scroll = true)
             compose.onNodeWithText(compose.activity.getString(R.string.delete)).performClick()
             compose.onNodeWithTag("confirm-comment-delete").performClick()
             compose.waitUntil(5000) { replies.isEmpty() && !vm.ui.value.sending }
@@ -143,4 +149,21 @@ class BookCommentsTest {
             server.shutdown()
         }
     }
+    /** IME dismissal can move a bottom sheet after the network response has already arrived. */
+    private fun waitForStableTouchTarget(text: String, scroll: Boolean = false) {
+        if (scroll) compose.onNodeWithText(text).performScrollTo()
+        var previous: androidx.compose.ui.geometry.Rect? = null
+        var stableSince = android.os.SystemClock.elapsedRealtime()
+        compose.waitUntil(5000) {
+            val bounds = compose.onNodeWithText(text).fetchSemanticsNode().boundsInRoot
+            val now = android.os.SystemClock.elapsedRealtime()
+            if (bounds != previous) {
+                previous = bounds
+                stableSince = now
+            }
+            now - stableSince >= 350
+        }
+        compose.onNodeWithText(text).assertIsDisplayed().assertIsEnabled()
+    }
+
 }

@@ -21,6 +21,14 @@ class BookFilesTest {
         BookFileRef(id = id, format = format, role = role)
 
     @Test
+    fun `TXT is content and routes through the native reader`() {
+        val book = book(file(7, "TXT", "primary"))
+        assertEquals(7, BookFiles.readableFile(book)?.id)
+        assertTrue(BookFiles.isReadableEbook("txt"))
+        assertEquals("txt", BookFiles.badgeFormat(book.files))
+    }
+
+    @Test
     fun `pdf-only book routes to the PDF reader`() {
         val b = book(file(1, "pdf", role = "primary"))
         assertTrue(BookFiles.isPdf(b))

@@ -1,6 +1,8 @@
 package com.bookorbit.feature.reader
 
 import android.content.Context
+import com.bookorbit.R
+import com.bookorbit.core.auth.SessionManager
 import com.bookorbit.core.model.BookDetail
 import com.bookorbit.core.model.BookFileRef
 import com.bookorbit.core.model.BookFiles
@@ -24,6 +26,7 @@ import javax.inject.Singleton
 class ReaderSource @Inject constructor(
     private val api: ApiService,
     private val downloads: DownloadsRepository,
+    private val session: SessionManager,
     @ApplicationContext private val context: Context,
 ) {
     data class ResolvedFile(val ref: LocalRef, val format: String, val fileId: Int)
@@ -54,7 +57,7 @@ class ReaderSource @Inject constructor(
             if (local.exists(context)) return@withContext ResolvedFile(local, format, ref.id)
         }
 
-        val cacheDir = File(context.cacheDir, "reader-cache").apply { mkdirs() }
+        val cacheDir = File(context.cacheDir, "reader-cache/${fontDigest("${session.serverUrl}|${session.currentUser?.id}")}").apply { mkdirs() }
         val dest = File(cacheDir, "${book.id}-${ref.id}.$ext")
 
         // Reuse a cached copy when it matches the server-reported size.
@@ -63,8 +66,19 @@ class ReaderSource @Inject constructor(
             return@withContext ResolvedFile(LocalRef.PlainFile(dest), format, ref.id)
         }
 
-        api.serveFile(ref.id).byteStream().use { input ->
-            dest.outputStream().use { output -> input.copyTo(output) }
+        val temporary = File(cacheDir, "${dest.name}.${java.util.UUID.randomUUID()}.part")
+        try {
+            api.serveFile(ref.id).use { body ->
+                body.byteStream().use { input ->
+                    temporary.outputStream().use { output -> input.copyTo(output) }
+                }
+            }
+            if (size != null && size > 0 && temporary.length() != size) {
+                throw java.io.IOException(context.getString(R.string.reader_download_incomplete))
+            }
+            check(temporary.renameTo(dest)) { context.getString(R.string.reader_download_finalize) }
+        } finally {
+            temporary.delete()
         }
         ResolvedFile(LocalRef.PlainFile(dest), format, ref.id)
     }

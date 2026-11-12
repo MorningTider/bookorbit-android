@@ -21,7 +21,7 @@
 ## BA-C11 至 BA-C16
 
 - `ReaderAppearance.kt`、`ReaderChrome.kt`、`ReaderSettingsSheet.kt` 和 `ReaderTocSheet.kt` 维护主题、紧凑面板及底部导航。
-- `ReaderPageCurl.kt` 在非输入时段缓存纯 WebView 正文，使用单张限尺寸快照、复用网格/路径/画笔和 ValueAnimator。`ReaderWebView.kt` 接入横向手势、音量键、首尾边界和释放。保留长按选字。
+- `ReaderPageCurl.kt` 在非输入时段缓存纯 WebView 正文，使用单张限尺寸快照、复用网格/路径/画笔，以postOnAnimation逐帧推进并限制排版阻塞后的单步进度。`ReaderWebView.kt` 接入横向手势、音量键、首尾边界和释放。保留长按选字。
 - `reader-navigation.js` 维护动画、自动阅读和分页边距。Foliate `gap` 必须传百分比，旋转后重算。
 - `ReaderBridge.kt`、`bridge.js`、`ReaderScreen.kt` 接入当前章 href、首尾状态、自动停止、原生自动卷页与引擎导航完成事件。
 - 新字段保留默认值以兼容旧 JSON，回归见 `ReaderBridgeEventsTest`。
@@ -69,3 +69,13 @@
 - ReadingSessionTracker保留Channel与Mutex串行检查点，再合入userId归属和isPermanentRejection。读取队列时发生账号切换的回归位于ReadingSessionTrackerTest。
 - ReaderTocSheet的倒序使用SwapVert图标和无障碍标签，章节数量与页签单行限制防止大字号英文挤占目录。ReaderInteractionTest在320dp、1.5倍字号核对当前章、搜索、系统边距和底部导航。
 - BookCommentsTest使用资源键定位控件，支持英文与中文系统。两个0.8新增设置键保留中英文和格式参数。
+
+
+## BA-C30至BA-C33
+
+- `core/model/BookFiles`与`feature/reader/ReaderSource`将TXT接入正常入口，缓存使用服务器与账号散列目录，流式下载后验证长度并原子落盘。
+- `assets/reader/reader-txt.js`将TXT构造成Foliate书籍对象，保持服务端100000字符章节切分、h1/p节点、EPUB包CFI与OEBPS章节路径。`ReaderEngineTest`验证相同CFI解析原文，并检查目标锚点位于重排后的可见页面。
+- `feature/reader/ReaderPreferenceSync`通过既有3.8排版接口合并默认与单书差异。队列按账号持久化，使用PATCH保护未知字段，写入作用域独立于阅读页面生命周期。`ReaderPreferenceSyncTest`验证离线、账号隔离、全局/单书、设备字段、缩进恢复与重置。
+- `feature/sources`维护聚合搜索、来源状态、任务与重复确认。`SearchScreen`提供入口。`SourceRepository`通过认证OkHttp客户端读取SSE，取消时关闭请求，错误保留在界面。`SourcesViewModelTest`验证旧请求取消与目标书库筛选。
+- `core/network/ImageUrls.sourceCover`通过BookOrbit封面代理生成URL。`SourceCoverUrlTest`验证反代子路径、查询参数与非法URL。`SourcesScreenTest`验证标记、重复附加和删除任务记录。
+- `ApiService`维护书源、验重与排版DTO，继续经过CompatibleApiService的委托入口。`SourceContractTest`验证SSE、来源状态、明确决策和版本保护请求。

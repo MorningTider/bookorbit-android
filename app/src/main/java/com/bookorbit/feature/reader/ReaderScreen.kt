@@ -253,7 +253,7 @@ fun ReaderScreen(
             withContext(Dispatchers.IO) {
                 controller.open(
                     openParamsFor(resolved.ref, resolved.format, resolved.initial, ui.settings)
-                        .copy(fontFaces = ui.fontFaces),
+                        .copy(fontFaces = ui.fontFaces, title = resolved.textTitle ?: ui.title.orEmpty(), author = ui.author),
                     context,
                 )
             }
@@ -587,6 +587,12 @@ fun ReaderScreen(
     if (settingsVisible) {
         ReaderSettingsSheet(
             settings = ui.settings,
+            showProfiles = ui.resolved?.format?.lowercase() != "cbz",
+            perBook = ui.perBookSettings,
+            sync = ui.syncSettings,
+            pendingSync = ui.settingsPending,
+            onScope = vm::setSettingsScope,
+            onSync = vm::setSettingsSync,
             fonts = ui.fonts,
             fontsLoading = ui.fontsLoading,
             downloadingFont = ui.downloadingFont,

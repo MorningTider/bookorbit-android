@@ -34,6 +34,7 @@ import java.util.concurrent.atomic.AtomicReference
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 import okhttp3.MediaType.Companion.toMediaType
@@ -311,28 +312,28 @@ class ReaderEngineTest {
             var inputToMotionMs = 0.0
             try {
                 val beforeCurl = fraction.get()
+                val sawFold = AtomicBoolean(false)
+                val firstMotionAt = java.util.concurrent.atomic.AtomicLong(0)
+                val observer = android.view.ViewTreeObserver.OnDrawListener {
+                    val overlay = host.getChildAt(1) as ReaderPageCurlView
+                    if (overlay.visibility == View.VISIBLE && overlay.progress > 0f)
+                        firstMotionAt.compareAndSet(0, SystemClock.elapsedRealtimeNanos())
+                    if (overlay.visibility == View.VISIBLE && overlay.progress in .25f..0.7f)
+                        sawFold.set(true)
+                }
+                InstrumentationRegistry.getInstrumentation().runOnMainSync {
+                    host.viewTreeObserver.addOnDrawListener(observer)
+                }
                 val turnRequestedAt = SystemClock.elapsedRealtimeNanos()
-                InstrumentationRegistry.getInstrumentation().runOnMainSync { controller.next() }
-                waitUntil("paper animation begins", failure) {
-                    var moving = false
+                try {
+                    InstrumentationRegistry.getInstrumentation().runOnMainSync { controller.next() }
+                    waitUntil("a drawn paper fold frame", failure) { sawFold.get() }
+                    inputToMotionMs = (firstMotionAt.get() - turnRequestedAt) / 1_000_000.0
+                } finally {
                     InstrumentationRegistry.getInstrumentation().runOnMainSync {
-                        val overlay = host.getChildAt(1) as ReaderPageCurlView
-                        moving = overlay.visibility == View.VISIBLE && overlay.progress > 0f
+                        if (host.viewTreeObserver.isAlive) host.viewTreeObserver.removeOnDrawListener(observer)
                     }
-                    moving
                 }
-                inputToMotionMs =
-                    (SystemClock.elapsedRealtimeNanos() - turnRequestedAt) / 1_000_000.0
-                waitUntil("paper fold visible", failure) {
-                    var showing = false
-                    InstrumentationRegistry.getInstrumentation().runOnMainSync {
-                        val overlay = host.getChildAt(1) as ReaderPageCurlView
-                        showing =
-                            overlay.visibility == View.VISIBLE && overlay.progress in .25f..0.7f
-                    }
-                    showing
-                }
-                screenshot("paper-curl-in-motion")
                 waitUntil("paper turn complete", failure) {
                     !host.isTurning && fraction.get() > beforeCurl
                 }
@@ -597,6 +598,90 @@ class ReaderEngineTest {
             book.delete()
             server.shutdown()
         }
+    }
+
+    @Test
+    fun txtChaptersFontsCfiAndReopenUseTheProductionEngine() = runBlocking {
+        val context = compose.activity
+        val name = "txt-engine-${System.nanoTime()}"
+        val json = Json { ignoreUnknownKeys = true }
+        val storage = SecureStorage(context, name, name, "$name-owner")
+        val session = SessionManager(storage, json)
+        session.setServerUrl("https://isolated.invalid")
+        session.signIn("isolated", AuthUser(1, "isolated"))
+        val api = Retrofit.Builder().baseUrl("https://isolated.invalid/").addConverterFactory(json.asConverterFactory("application/json".toMediaType())).build().create(ApiService::class.java)
+        val fonts = ReaderFontRepository(api, session, json, context)
+        val ready = AtomicBoolean(false)
+        val loaded = AtomicBoolean(false)
+        val failure = AtomicReference<String?>(null)
+        val cfi = AtomicReference<String?>(null)
+        val toc = AtomicReference<List<TocItem>>(emptyList())
+        val controller = ReaderController()
+        controller.listener = { event -> when (event) {
+            ReaderEvent.Ready -> ready.set(true)
+            is ReaderEvent.Loaded -> { toc.set(event.toc); loaded.set(true) }
+            is ReaderEvent.Relocate -> cfi.set(event.cfi)
+            is ReaderEvent.Error -> failure.set(event.message)
+            else -> Unit
+        } }
+        val file = File(context.cacheDir, "$name.txt").apply {
+            writeText("第1章 开始\n" + "中文正文。".repeat(1000) + "\n第2章 继续\n" + "下一章内容。".repeat(1000), charset("GB18030"))
+        }
+        val companion = File(context.cacheDir, "$name.epub")
+        // This is the package and h1/p structure emitted by the server TXT reader cache.
+        ZipOutputStream(companion.outputStream()).use { zip ->
+            fun entry(name: String, text: String) {
+                zip.putNextEntry(ZipEntry(name))
+                zip.write(text.toByteArray())
+                zip.closeEntry()
+            }
+            entry("mimetype", "application/epub+zip")
+            entry("META-INF/container.xml", """<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles></container>""")
+            entry("OEBPS/content.opf", """<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="book-id"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:identifier id="book-id">isolated-txt</dc:identifier><dc:title>原始文件名</dc:title><dc:language>zh</dc:language></metadata><manifest><item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/><item id="c0" href="chapter.xhtml" media-type="application/xhtml+xml"/><item id="c1" href="chapter-1.xhtml" media-type="application/xhtml+xml"/></manifest><spine><itemref idref="c0"/><itemref idref="c1"/></spine></package>""")
+            entry("OEBPS/nav.xhtml", """<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops"><head><title>目录</title></head><body><nav epub:type="toc"><ol><li><a href="chapter.xhtml">第1章 开始</a></li><li><a href="chapter-1.xhtml">第2章 继续</a></li></ol></nav></body></html>""")
+            for ((index, title) in listOf("第1章 开始", "第2章 继续").withIndex()) {
+                val paragraph = if (index == 0) "中文正文。".repeat(1000) else "下一章内容。".repeat(1000)
+                entry("OEBPS/" + if (index == 0) "chapter.xhtml" else "chapter-1.xhtml", """<?xml version="1.0" encoding="UTF-8"?><html xmlns="http://www.w3.org/1999/xhtml"><head><title>$title</title></head><body><h1>$title</h1><p>$paragraph</p></body></html>""")
+            }
+        }
+        try {
+            compose.setContent { ReaderWebView(controller, fonts, Modifier.fillMaxSize(), onRendererGone = { failure.set("Renderer gone") }) }
+            waitUntil("TXT bridge ready", failure) { ready.get() }
+            val settings = ReaderSettings(isDark = false, themeName = "meadow", fontSize = 24)
+            controller.open(OpenParams(LocalRef.PlainFile(file), "txt", null, null, settings, title = "原始文件名"), context)
+            waitUntil("TXT loaded", failure) { loaded.get() && cfi.get() != null }
+            assertEquals(listOf("第1章 开始", "第2章 继续"), toc.get().map { it.label })
+            val web = findWebView(context.window.decorView)!!
+            assertTrue(evaluate(web, "document.querySelector('foliate-view').book.sections[0].cfi").contains("/6/2"))
+            controller.goTo("1")
+            waitUntil("TXT next chapter", failure) { cfi.get()?.contains("/6/4") == true }
+            val startOfChapter = cfi.get()
+            controller.next()
+            waitUntil("TXT inside second chapter", failure) { cfi.get() != startOfChapter }
+            val saved = cfi.get()!!
+            val savedText = evaluate(web, "document.querySelector('foliate-view').lastLocation.range.toString()")
+            assertTrue(evaluate(web, "document.querySelector('foliate-view').renderer.getContents()[0].doc.body.textContent").contains("第2章"))
+            loaded.set(false)
+            controller.open(OpenParams(LocalRef.PlainFile(file), "txt", saved, null, settings, title = "原始文件名"), context)
+            waitUntil("TXT reopened at saved chapter", failure) { loaded.get() && cfi.get()?.contains("/6/4") == true }
+            screenshot("txt-reader-custom2")
+            loaded.set(false)
+            cfi.set(null)
+            controller.open(OpenParams(LocalRef.PlainFile(companion), "epub", saved, null, settings), context)
+            waitUntil("TXT CFI opens inside server-shaped EPUB", failure) { loaded.get() && cfi.get()?.contains("/6/4") == true }
+            val savedLiteral = ReaderBridge.json.encodeToString(String.serializer(), saved)
+            val restoredText = evaluate(web, """(() => {
+                const v = document.querySelector('foliate-view');
+                const d = v.renderer.getContents()[0].doc;
+                return v.resolveCFI($savedLiteral).anchor(d).toString();
+            })()""")
+            assertEquals("The CFI resolves to the identical text in both formats", savedText, restoredText)
+            assertEquals("The saved text anchor is within the displayed reflowed page", "0", evaluate(web, """(() => {
+                const v = document.querySelector('foliate-view');
+                const target = v.resolveCFI($savedLiteral).anchor(v.renderer.getContents()[0].doc);
+                return v.lastLocation.range.comparePoint(target.startContainer, target.startOffset);
+            })()"""))
+        } finally { file.delete(); companion.delete(); session.signOut(); context.deleteSharedPreferences(name) }
     }
 
     private fun evaluate(view: WebView, script: String): String {

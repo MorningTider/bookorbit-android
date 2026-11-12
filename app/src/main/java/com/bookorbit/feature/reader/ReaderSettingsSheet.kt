@@ -89,6 +89,12 @@ fun ReaderSettingsSheet(
     onDismiss: () -> Unit,
     onStartAutoRead: () -> Unit = {},
     onContents: () -> Unit = {},
+    showProfiles: Boolean = true,
+    perBook: Boolean = false,
+    sync: Boolean = false,
+    pendingSync: Boolean = false,
+    onScope: (Boolean) -> Unit = {},
+    onSync: (Boolean) -> Unit = {},
 ) {
     var page by rememberSaveable { mutableStateOf(ReaderSettingsPage.QUICK) }
     val maxHeight = LocalConfiguration.current.screenHeightDp.dp * 0.84f
@@ -155,7 +161,14 @@ fun ReaderSettingsSheet(
                             )
                         ReaderSettingsPage.SPACING -> SpacingSettings(settings, onChange)
                         ReaderSettingsPage.THEMES -> ThemePicker(settings, onChange)
-                        ReaderSettingsPage.MORE -> MoreSettings(settings, onChange)
+                        ReaderSettingsPage.MORE -> {
+                            if (showProfiles) {
+                                SettingToggle(stringResource(R.string.rs_settings_sync), sync, onSync)
+                                SettingToggle(stringResource(R.string.rs_settings_book), perBook, onScope)
+                            }
+                            if (pendingSync) Text(stringResource(R.string.rs_settings_pending))
+                            MoreSettings(settings, onChange)
+                        }
                         ReaderSettingsPage.FONTS -> Unit
                     }
                 }

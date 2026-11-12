@@ -12,6 +12,7 @@
  * asset served by WebViewAssetLoader.
  */
 import "./foliate/view.js";
+import { makeTextBook } from "./reader-txt.js";
 import { settleReaderFonts, prepareSectionFonts } from "./reader-loading.js";
 import {
   fontFaceCSS,
@@ -635,7 +636,7 @@ async function openBook(meta, parts) {
     });
     const file = new File([blob], `book.${format}`, { type: blob.type });
 
-    await view.open(file);
+    await view.open(format === "txt" ? await makeTextBook(blob, meta) : file);
 
     applyStyles(meta.settings ?? currentSettings);
 
