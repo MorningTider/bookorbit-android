@@ -1,13 +1,14 @@
 ## 中文定制版
 
-当前自用包为 `0.8.0-custom.2`，版本码802，基于官方Android v0.8.0，对接群晖原生BookOrbit 3.8。
+当前自用包为 `0.8.0-custom.3`，版本码803，基于官方Android v0.8.0，对接群晖原生BookOrbit 3.8。
 
-- TXT直接阅读沿用EPUB的字体、目录、批注与CFI定位。
+- 修复自定义字体跨章重复加载，章节与后台页数计算共享已解码的字体，保留标题和正文显示前的字体检查。
+- TXT直接阅读沿用EPUB的字体、目录、批注与CFI定位，共享章节资源按引用计数释放。
 - 搜索页新增书源入口，自动读取服务器启用的来源，展示封面、简介、来源与已入库标记，管理后台任务和重复导入选择。
 - 阅读排版支持账号同步、全局默认、单书覆盖与离线补传。
 - 保留共享书评/章节评论/段评、阅读进度和日志、整本页码、护眼、跟手卷页及蓝白BookOrbit图标。
 
-Full与F-Droid各341项单元测试、JS41项、常规19项、窄屏12项和F-Droid安装4项检查通过。域名只读联调通过，手机覆盖安装、真实字体、跨端联合操作与流畅度仍待实机验收，模拟器记录存在慢帧。验收细节见 [验收记录](docs/VALIDATION.md)。
+Full与F-Droid各341项单元测试、JS45项、常规22项、窄屏12项和F-Droid安装4项检查通过。域名只读联调通过，手机覆盖安装、真实字体、跨端联合操作与流畅度仍待实机验收，模拟器记录存在慢帧。验收细节见 [验收记录](docs/VALIDATION.md)。
 
 本 fork 的阅读器定制代码维护在 `custom/bookorbit-android-v0.7.1`。需求和升级记录见 [定制需求](docs/CUSTOMIZATION_REQUIREMENTS.md)、[功能状态](docs/CUSTOM_FEATURE_MATRIX.md)、[剩余事项](docs/CUSTOMIZATION_REMAINING.md)、[补丁索引](docs/CUSTOM_PATCH_INDEX.md) 和 [上游同步流程](docs/CUSTOM_BRANCH_WORKFLOW.md)。
 

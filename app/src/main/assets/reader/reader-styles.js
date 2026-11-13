@@ -1,4 +1,4 @@
-export function fontFaceCSS(faces) {
+export function readerFontSources(faces) {
   const formats = {
     ttf: "truetype",
     otf: "opentype",
@@ -23,8 +23,21 @@ export function fontFaceCSS(faces) {
         min,
         Math.min(1000, Number(face.weightMax ?? face.weight) || min),
       );
-      return `@font-face { font-family: "${face.family}"; src: url("https://appassets.androidplatform.net/reader-fonts/${face.fileName}") format("${formats[face.format]}"); font-weight: ${min} ${max}; font-style: ${face.style === "italic" ? "italic" : "normal"}; font-display: block; }`;
-    })
+      return {
+        family: face.family,
+        source: `url("https://appassets.androidplatform.net/reader-fonts/${face.fileName}") format("${formats[face.format]}")`,
+        weight: `${min} ${max}`,
+        style: face.style === "italic" ? "italic" : "normal",
+      };
+    });
+}
+
+export function fontFaceCSS(faces) {
+  return readerFontSources(faces)
+    .map(
+      (face) =>
+        `@font-face { font-family: "${face.family}"; src: ${face.source}; font-weight: ${face.weight}; font-style: ${face.style}; font-display: block; }`,
+    )
     .join("\n");
 }
 

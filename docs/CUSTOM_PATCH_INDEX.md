@@ -79,3 +79,11 @@
 - `feature/sources`维护聚合搜索、来源状态、任务与重复确认。`SearchScreen`提供入口。`SourceRepository`通过认证OkHttp客户端读取SSE，取消时关闭请求，错误保留在界面。`SourcesViewModelTest`验证旧请求取消与目标书库筛选。
 - `core/network/ImageUrls.sourceCover`通过BookOrbit封面代理生成URL。`SourceCoverUrlTest`验证反代子路径、查询参数与非法URL。`SourcesScreenTest`验证标记、重复附加和删除任务记录。
 - `ApiService`维护书源、验重与排版DTO，继续经过CompatibleApiService的委托入口。`SourceContractTest`验证SSE、来源状态、明确决策和版本保护请求。
+
+
+## BA-C38
+
+- `reader-styles.js`集中校验字体来源、字重范围和样式，`reader-loading.js`用同一组FontFace加载Promise向各章节与后台测量文档注册相同字体对象。字体失败可重试，选择变化后旧请求无法替换新字体，WeakMap只跟踪本阅读器注入的字体。
+- `bridge.js`按所选字体组复用加载器，切换字体先等待加载，再更新正文样式。新章节在字体选择变化时重新准备当前选择，继续等待常规、粗体、斜体及文档字体就绪。
+- `reader-txt.js`维护章节URL引用计数，与前台、相邻预取和后台分页的独立资源生命周期配合。
+- `ReaderChapterFontTest`使用约26MB的系统中文字体和合成EPUB/TXT，检查实际文件读取次数、先选字体再仿真跨章、标题同步和字体就绪。`reader-loading.test.mjs`检查共享字体身份、失败重试、释放与旧请求，TXT测试检查共享资源保持到最后一次释放。

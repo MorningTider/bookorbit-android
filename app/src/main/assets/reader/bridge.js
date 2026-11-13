@@ -13,9 +13,8 @@
  */
 import "./foliate/view.js";
 import { makeTextBook } from "./reader-txt.js";
-import { settleReaderFonts, prepareSectionFonts } from "./reader-loading.js";
+import { settleReaderFonts, prepareSectionFonts, createSectionFontLoader } from "./reader-loading.js";
 import {
-  fontFaceCSS,
   typographyCSS,
   paperBackground,
 } from "./reader-styles.js";
@@ -38,6 +37,8 @@ const container = document.getElementById("reader");
 let currentSettings = null;
 let fontFaces = [];
 let appliedCSS = null;
+let sectionFontKey = null;
+let loadSectionFonts = null;
 /** The <foliate-view> element, once created. */
 let view = null;
 /** Base64 transfer state for the book currently being opened. */
@@ -132,7 +133,7 @@ function schedulePageCounter() {
       book: view.book,
       renderer: r,
       styles: () => generateCSS(currentSettings),
-      prepare: (doc) => prepareSectionFonts(doc, currentSettings, fontFaces),
+      prepare: (doc) => prepareSectionFonts(doc, currentSettings, fontFaces, loadSectionFonts),
       onChange: postPages,
     });
   }, 500);
@@ -196,7 +197,6 @@ function generateCSS(s) {
     : '';
   return `
     @namespace epub "http://www.idpf.org/2007/ops";
-    ${fontFaceCSS(fontFaces)}
     @media print { html { column-width: auto !important; height: auto !important; width: auto !important; } }
     @media screen {
       html { color-scheme: ${dark ? 'dark' : 'light'}; color: ${mode.fg}; font-size: ${s.fontSize}px; }
@@ -225,7 +225,7 @@ function generateCSS(s) {
 }
 
 // Ported from useReaderState.applyToRenderer.
-function applyStyles(settings) {
+async function applyStyles(settings) {
   if (!view) return;
   currentSettings = {
     ...DEFAULT_SETTINGS,
@@ -245,8 +245,24 @@ function applyStyles(settings) {
   view.style.backgroundImage = background.image;
   const r = view.renderer;
   if (!r) return;
-  r.prepareDocument = (doc) =>
-    prepareSectionFonts(doc, currentSettings, fontFaces);
+  const selectedFaces = fontFaces.filter((face) => face.family === s.fontFamily);
+  const fontKey = JSON.stringify(selectedFaces);
+  if (sectionFontKey !== fontKey) {
+    sectionFontKey = fontKey;
+    const loader = createSectionFontLoader(selectedFaces, undefined, () => loadSectionFonts === loader);
+    loadSectionFonts = loader;
+  }
+  const loadFonts = loadSectionFonts;
+  r.prepareDocument = async (doc) => {
+    let loader;
+    do {
+      loader = loadSectionFonts;
+      await prepareSectionFonts(doc, currentSettings, fontFaces, loader);
+    } while (loader !== loadSectionFonts);
+  };
+  const doc = r.getContents?.()[0]?.doc;
+  if (doc) await loadFonts(doc);
+  if (currentSettings !== s) return;
   const attr = (name, value) => {
     if (r.getAttribute(name) !== value) r.setAttribute(name, value);
   };
@@ -551,7 +567,7 @@ function createView() {
   view.addEventListener("load", () => {
     // The paginator swaps its internal view in a microtask after 'load'; defer so
     // setStyles targets the freshly loaded section (mirrors useFoliate.ts).
-    setTimeout(() => applyStyles(currentSettings), 0);
+    setTimeout(() => { void applyStyles(currentSettings).catch(postError); }, 0);
   });
 
   view.addEventListener("load", (e) => {
@@ -638,7 +654,7 @@ async function openBook(meta, parts) {
 
     await view.open(format === "txt" ? await makeTextBook(blob, meta) : file);
 
-    applyStyles(meta.settings ?? currentSettings);
+    await applyStyles(meta.settings ?? currentSettings);
 
     let navigated = false;
     if (meta.cfi) {
@@ -697,6 +713,8 @@ async function turnPage(next) {
 window.__readerBegin = (metaJson) => {
   try {
     pending = { meta: JSON.parse(metaJson), parts: [] };
+    sectionFontKey = null;
+    loadSectionFonts = null;
     fontFaces = Array.isArray(pending.meta.fontFaces)
       ? pending.meta.fontFaces
       : [];
@@ -771,10 +789,10 @@ window.__readerCommand = (json) => {
       break;
     case "setFonts":
       fontFaces = Array.isArray(cmd.faces) ? cmd.faces : [];
-      applyStyles(currentSettings);
+      void applyStyles(currentSettings).catch(postError);
       break;
     case "applyStyles":
-      applyStyles(cmd.settings);
+      void applyStyles(cmd.settings).catch(postError);
       break;
     case "setAnnotations":
       setAnnotations(cmd.items);

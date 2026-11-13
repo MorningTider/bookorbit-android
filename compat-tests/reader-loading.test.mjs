@@ -1,13 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
-const source = await readFile(
-  new URL("../app/src/main/assets/reader/reader-loading.js", import.meta.url),
-  "utf8",
-);
-const { settleReaderFonts, prepareSectionFonts } = await import(
-  `data:text/javascript;base64,${Buffer.from(source).toString("base64")}`
-);
+import {
+  settleReaderFonts,
+  prepareSectionFonts,
+  createSectionFontLoader,
+} from "../app/src/main/assets/reader/reader-loading.js";
 
 test("the first page waits for the selected font and two layout frames", async () => {
   let release;
@@ -158,4 +155,123 @@ test("chapter reveal waits for a separately loaded bold heading face", async () 
   releaseHeading([]);
   await work;
   assert.equal(shown, true);
+});
+
+test("chapters and page counting reuse the identical decoded faces", async () => {
+  let loads = 0;
+  const created = [];
+  class Font {
+    constructor(family, source, descriptors) {
+      Object.assign(this, { family, source, descriptors });
+      created.push(this);
+    }
+    async load() {
+      loads++;
+      return this;
+    }
+  }
+  const faces = [
+    {
+      family: "__serverfont_serif",
+      fileName: "server-1-4321-aabbccddeeff.otf",
+      format: "otf",
+      weight: 400,
+    },
+    {
+      family: "__serverfont_serif",
+      fileName: "server-2-4321-aabbccddeeff.otf",
+      format: "otf",
+      weight: 700,
+    },
+  ];
+  const loader = createSectionFontLoader(faces, Font);
+  const documents = Array.from({ length: 8 }, () => ({ fonts: new Set() }));
+  await Promise.all(documents.map(loader));
+  assert.equal(loads, 2);
+  for (const doc of documents) assert.deepEqual([...doc.fonts], created);
+  assert.match(created[1].descriptors.weight, /700/);
+});
+
+test("a failed font load is retryable and cannot reveal fallback text", async () => {
+  let loads = 0;
+  class Font {
+    async load() {
+      if (++loads === 1) throw Error("interrupted font");
+      return this;
+    }
+  }
+  const loader = createSectionFontLoader(
+    [
+      {
+        family: "__serverfont_serif",
+        fileName: "server-1-4321-aabbccddeeff.otf",
+        format: "otf",
+        weight: 400,
+      },
+    ],
+    Font,
+  );
+  const doc = { fonts: new Set() };
+  await assert.rejects(loader(doc), /interrupted/);
+  assert.equal(doc.fonts.size, 0);
+  await loader(doc);
+  assert.equal(loads, 2);
+  assert.equal(doc.fonts.size, 1);
+});
+
+test("changing fonts releases previous reader faces while preserving embedded faces", async () => {
+  class Font {
+    constructor(family) {
+      this.family = family;
+    }
+    async load() {
+      return this;
+    }
+  }
+  const embedded = { family: "Book heading" };
+  const doc = { fonts: new Set([embedded]) };
+  const face = {
+    family: "__serverfont_serif",
+    fileName: "server-1-4321-aabbccddeeff.otf",
+    format: "otf",
+    weight: 400,
+  };
+  await createSectionFontLoader([face], Font)(doc);
+  assert.equal(doc.fonts.size, 2);
+  await createSectionFontLoader(
+    [{ ...face, family: "__serverfont_sans" }],
+    Font,
+  )(doc);
+  assert.deepEqual(
+    [...doc.fonts].map((f) => f.family),
+    ["Book heading", "__serverfont_sans"],
+  );
+  await createSectionFontLoader([], Font)(doc);
+  assert.deepEqual([...doc.fonts], [embedded]);
+});
+
+test("an earlier font selection finishing late cannot replace the current faces", async () => {
+  let release;
+  class Font {
+    load() {
+      return new Promise((resolve) => {
+        release = () => resolve(this);
+      });
+    }
+  }
+  const face = {
+    family: "__serverfont_serif",
+    fileName: "server-1-4321-aabbccddeeff.otf",
+    format: "otf",
+    weight: 400,
+  };
+  let current = true;
+  const loader = createSectionFontLoader([face], Font, () => current);
+  const latest = { family: "Latest selection" };
+  const doc = { fonts: new Set([latest]) };
+  const work = loader(doc);
+  current = false;
+  release();
+  await work;
+  assert.deepEqual([...doc.fonts], [latest]);
 });

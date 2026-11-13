@@ -1,3 +1,41 @@
+import { readerFontSources } from "./reader-styles.js";
+
+const documentFaces = new WeakMap();
+
+/** Share decoded faces across section documents and the hidden page counter. */
+export function createSectionFontLoader(
+  faces,
+  Font = globalThis.FontFace,
+  isCurrent = () => true,
+) {
+  const sources = readerFontSources(faces);
+  let loading = null;
+  return async (doc) => {
+    loading ??= Promise.all(
+      sources.map((face) =>
+        new Font(face.family, face.source, {
+          weight: face.weight,
+          style: face.style,
+          display: "block",
+        }).load(),
+      ),
+    );
+    const request = loading;
+    try {
+      const loaded = await request;
+      if (!isCurrent()) return;
+      for (const face of documentFaces.get(doc) ?? []) {
+        if (!loaded.includes(face)) doc.fonts.delete(face);
+      }
+      for (const face of loaded) doc.fonts.add(face);
+      documentFaces.set(doc, loaded);
+    } catch (error) {
+      if (loading === request) loading = null;
+      throw error;
+    }
+  };
+}
+
 /** Complete font layout before revealing or restoring the initial reading position. */
 export async function settleReaderFonts(
   view,
@@ -13,7 +51,8 @@ export async function settleReaderFonts(
 }
 
 /** Each section owns a fresh FontFaceSet, including chapters revisited from the contents. */
-export async function prepareSectionFonts(doc, settings, faces) {
+export async function prepareSectionFonts(doc, settings, faces, loadFaces) {
+  await loadFaces?.(doc);
   const selected =
     faces?.filter((face) => face.family === settings?.fontFamily) ?? [];
   if (selected.length) {
