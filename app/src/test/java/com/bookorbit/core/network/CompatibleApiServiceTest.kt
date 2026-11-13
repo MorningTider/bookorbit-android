@@ -26,7 +26,7 @@ class CompatibleApiServiceTest {
                 .baseUrl(server.url("/api/v1/"))
                 .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
                 .build()
-        return NetworkModule.provideApiService(retrofit, json)
+        return NetworkModule.provideApiService(retrofit)
     }
 
     private fun json(body: String) =
@@ -138,71 +138,14 @@ class CompatibleApiServiceTest {
     }
 
     @Test
-    fun `3_7 statistics use the public widget batch endpoint`() = runTest {
+    fun `3_5 smart shelf preserves query and pagination on fallback`() = runTest {
         MockWebServer().use { server ->
-            server.enqueue(
-                json(
-                    """{"items":[{"type":"reading-streak","failed":false,"data":{"currentStreak":3,"longestStreak":8}}]}"""
-                )
-            )
-            server.enqueue(
-                json(
-                    """{"items":[{"type":"reading-goal","failed":false,"data":{"goalBooks":24,"completedBooks":5,"year":2026}}]}"""
-                )
-            )
-            val api = api(server)
-            assertEquals(3, api.getReadingStreak().currentStreak)
-            assertEquals(24, api.getReadingGoal().goalBooks)
-            for (type in listOf("reading-streak", "reading-goal")) {
-                val request = server.takeRequest()
-                assertEquals("/api/v1/dashboard/widgets/batch", request.path)
-                assertEquals("POST", request.method)
-                assertEquals(
-                    type,
-                    Json.parseToJsonElement(request.body.readUtf8())
-                        .jsonObject["widgets"]!!
-                        .jsonArray
-                        .single()
-                        .jsonPrimitive
-                        .content,
-                )
-            }
-        }
-    }
-
-    @Test
-    fun `3_5 smart shelf and statistics retain their original requests`() = runTest {
-        MockWebServer().use { server ->
-            server.dispatcher =
-                object : Dispatcher() {
-                    override fun dispatch(request: RecordedRequest): MockResponse =
-                        when {
-                            request.method == "POST" -> MockResponse().setResponseCode(404)
-                            request.path!!.startsWith("/api/v1/smart-scopes/") ->
-                                json("""{"items":[],"total":3}""")
-                            request.path!!.endsWith("reading-goal") -> json("""{"goalBooks":12}""")
-                            else -> json("""{"currentStreak":2}""")
-                        }
-                }
-            val api = api(server)
-            assertEquals(3, api.getSmartScopeBooks(7, 1, 20, "book").total)
-            assertEquals(12, api.getReadingGoal().goalBooks)
-            assertEquals(2, api.getReadingStreak().currentStreak)
-            assertEquals(6, server.requestCount)
-        }
-    }
-
-    @Test
-    fun `failed widget does not silently become a zero or a legacy request`() = runTest {
-        MockWebServer().use { server ->
-            server.enqueue(
-                json("""{"items":[{"type":"reading-goal","failed":true,"data":null}]}""")
-            )
-            try {
-                api(server).getReadingGoal()
-                fail("Failed widget must remain a failure")
-            } catch (_: java.io.IOException) {}
-            assertEquals(1, server.requestCount)
+            server.enqueue(MockResponse().setResponseCode(404))
+            server.enqueue(json("""{"items":[],"total":3}"""))
+            assertEquals(3, api(server).getSmartScopeBooks(7, 1, 20, "book").total)
+            assertEquals("/api/v1/smart-scopes/7/books/query", server.takeRequest().path)
+            assertEquals("/api/v1/smart-scopes/7/books?page=1&size=20&q=book", server.takeRequest().path)
+            assertEquals(2, server.requestCount)
         }
     }
 }

@@ -8,14 +8,11 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaConstants
 import com.bookorbit.core.db.AudioProgressEntity
 import com.bookorbit.core.db.DownloadEntity
-import com.bookorbit.core.storage.LocalRef
-import com.bookorbit.core.storage.toUri
 import com.bookorbit.feature.downloads.isCompleteDownloadStatus
 
 /**
- * Builds the Android Auto browse hierarchy from the offline catalog. The car shows a root with two
- * shelves — "Continue listening" and "Downloaded" — both sourced from completed audiobook downloads
- * so browsing works fully offline (no auth headers needed for cover art over the car connection).
+ * Pure browse IDs, offline shelves and bounded grouping for Android Auto. Online shelves are
+ * supplied by AutoCatalog; the first three root shelves keep stable positions as playback changes.
  *
  * The filtering/ordering is kept pure (operating on entities) so it is unit-testable; only
  * [toMediaItem] touches the Android framework ([Uri]).
@@ -24,6 +21,29 @@ object AutoBrowseTree {
     const val ROOT_ID = "root"
     const val CONTINUE_ID = "continue"
     const val DOWNLOADS_ID = "downloads"
+    const val LIBRARY_ID = "audiobooks"
+
+    data class Group(val parent: String, val start: Int, val end: Int)
+    fun parseGroup(id: String): Group? {
+        val parts = id.split('/')
+        if (parts.size != 4 || parts[0] != "group" || parts[1] !in setOf(DOWNLOADS_ID, CONTINUE_ID, NOW_PLAYING_CHAPTERS_ID)) return null
+        val start = parts[2].toIntOrNull() ?: return null
+        val end = parts[3].toIntOrNull() ?: return null
+        return Group(parts[1], start, end).takeIf { start >= 0 && end > start }
+    }
+
+    /** Keep long local shelves manageable without relying on host-side pagination. */
+    fun grouped(parent: String, entries: List<BrowseEntry>, labels: Labels, start: Int = 0, end: Int = entries.size): List<BrowseEntry> {
+        val from = start.coerceIn(0, entries.size)
+        val until = end.coerceIn(from, entries.size)
+        val count = until - from
+        if (count <= 40) return entries.subList(from, until)
+        val step = maxOf(40, ((count.toLong() + 39) / 40).toInt())
+        return (from until until step step).map { offset ->
+            val next = (offset.toLong() + step).coerceAtMost(until.toLong()).toInt()
+            BrowseEntry("group/$parent/$offset/$next", labels.titleRange(entries[offset].title, entries[next - 1].title), null, null, false)
+        }
+    }
 
     const val NOW_PLAYING_CHAPTERS_ID = "now_playing_chapters"
 
@@ -34,7 +54,7 @@ object AutoBrowseTree {
 
     /** Parses a `book/<id>` media id back to its book id, or null if it isn't a book media id. */
     fun parseBookId(mediaId: String): Int? =
-        mediaId.removePrefix(BOOK_PREFIX).takeIf { it != mediaId }?.toIntOrNull()
+        mediaId.removePrefix(BOOK_PREFIX).takeIf { it != mediaId }?.toIntOrNull()?.takeIf { it > 0 }
 
     /** A browse node or playable book, decoupled from the Android [MediaItem] for testability. */
     data class BrowseEntry(
@@ -61,6 +81,13 @@ object AutoBrowseTree {
         val audiobook: String,
         /** "Chapters · <book title>" */
         val chaptersOf: (bookTitle: String) -> String,
+        val audiobooks: String = "",
+        val byTitle: String = "By title",
+        val byAuthor: String = "By author",
+        val bySeries: String = "By series",
+        val unknownAuthor: String = "Unknown author",
+        val bookCount: (Int) -> String = { "$it books" },
+        val titleRange: (String, String) -> String = { first, last -> "$first – $last" },
     )
 
     data class CurrentBookInfo(val bookId: Int, val title: String, val ranges: List<ChapterRange>, val positionSec: Double)
@@ -73,11 +100,12 @@ object AutoBrowseTree {
 
     /** Top-level shelves shown under the root. */
     fun rootChildren(current: CurrentBookInfo?, labels: Labels): List<BrowseEntry> = buildList {
+        add(BrowseEntry(CONTINUE_ID, labels.continueListening, null, null, isPlayable = false))
+        add(BrowseEntry(DOWNLOADS_ID, labels.downloaded, null, null, isPlayable = false))
+        add(BrowseEntry(LIBRARY_ID, labels.audiobooks, null, null, isPlayable = false))
         if (current != null && current.ranges.size >= 2) {
             add(BrowseEntry(NOW_PLAYING_CHAPTERS_ID, labels.chaptersOf(current.title), null, null, isPlayable = false))
         }
-        add(BrowseEntry(CONTINUE_ID, labels.continueListening, null, null, isPlayable = false))
-        add(BrowseEntry(DOWNLOADS_ID, labels.downloaded, null, null, isPlayable = false))
     }
 
     fun chapterMediaId(bookId: Int, index: Int) = "$CHAPTER_PREFIX$bookId/$index"
@@ -88,7 +116,7 @@ object AutoBrowseTree {
         if (parts.size != 2) return null
         val book = parts[0].toIntOrNull() ?: return null
         val idx = parts[1].toIntOrNull() ?: return null
-        return book to idx
+        return (book to idx).takeIf { book > 0 && idx >= 0 }
     }
 
     fun chapterEntries(current: CurrentBookInfo): List<BrowseEntry> = current.ranges.map { r ->
@@ -117,7 +145,7 @@ object AutoBrowseTree {
         labels: Labels,
     ): List<BrowseEntry> {
         val byId = downloads.filter { it.isComplete }.associateBy { it.bookId }
-        return progress.sortedByDescending { it.updatedAt }
+        return progress.filter { it.percentage < ResumeCandidates.FINISHED_PERCENT }.sortedByDescending { it.updatedAt }
             .mapNotNull { byId[it.bookId]?.toBrowseEntry(labels) }
     }
 
@@ -125,7 +153,7 @@ object AutoBrowseTree {
     fun rootMediaItem(labels: Labels): MediaItem = browsableItem(ROOT_ID, labels.appName, null)
 
     @OptIn(UnstableApi::class)
-    fun toMediaItem(entry: BrowseEntry): MediaItem =
+    fun toMediaItem(entry: BrowseEntry, artworkUri: android.net.Uri? = null): MediaItem =
         if (entry.isPlayable) {
             val metadata = MediaMetadata.Builder()
                 .setTitle(entry.title)
@@ -152,7 +180,7 @@ object AutoBrowseTree {
                         )
                     }
                 }
-                .apply { entry.coverPath?.let { setArtworkUri(LocalRef.parse(it).toUri()) } }
+                .setArtworkUri(artworkUri)
                 .build()
             MediaItem.Builder().setMediaId(entry.mediaId).setMediaMetadata(metadata).build()
         } else {

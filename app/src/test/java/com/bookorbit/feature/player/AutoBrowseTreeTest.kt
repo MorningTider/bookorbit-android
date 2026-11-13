@@ -100,22 +100,31 @@ class AutoBrowseTreeTest {
     @Test
     fun `root has continue and downloads shelves`() {
         assertEquals(
-            listOf(AutoBrowseTree.CONTINUE_ID, AutoBrowseTree.DOWNLOADS_ID),
+            listOf(AutoBrowseTree.CONTINUE_ID, AutoBrowseTree.DOWNLOADS_ID, AutoBrowseTree.LIBRARY_ID),
             AutoBrowseTree.rootChildren(null, labels).map { it.mediaId },
         )
+    }
+
+    @Test
+    fun `continueListening excludes finished downloads`() {
+        val items = AutoBrowseTree.continueListening(
+            listOf(download(1), download(2)),
+            listOf(progress(1, 200).copy(percentage = 99.5), progress(2, 100)), labels,
+        )
+        assertEquals(listOf("book/2"), items.map { it.mediaId })
     }
 
     private val ranges = listOf(ChapterRange(0, "One", 0.0, 60.0), ChapterRange(1, "Two", 60.0, 150.0), ChapterRange(2, "Three", 150.0, 200.0))
     private val current = CurrentBookInfo(bookId = 7, title = "Dune", ranges = ranges, positionSec = 75.0)
 
     @Test
-    fun `rootChildren leads with the chapters node only when a chaptered book is loaded`() {
-        assertEquals(listOf(AutoBrowseTree.CONTINUE_ID, AutoBrowseTree.DOWNLOADS_ID), AutoBrowseTree.rootChildren(null, labels).map { it.mediaId })
+    fun `rootChildren keeps shelves stable and appends chapters when loaded`() {
+        assertEquals(listOf(AutoBrowseTree.CONTINUE_ID, AutoBrowseTree.DOWNLOADS_ID, AutoBrowseTree.LIBRARY_ID), AutoBrowseTree.rootChildren(null, labels).map { it.mediaId })
         val withBook = AutoBrowseTree.rootChildren(current, labels)
-        assertEquals(AutoBrowseTree.NOW_PLAYING_CHAPTERS_ID, withBook.first().mediaId)
-        assertEquals("Chapters* Dune", withBook.first().title)
-        assertEquals(3, withBook.size)
-        assertEquals(2, AutoBrowseTree.rootChildren(current.copy(ranges = emptyList()), labels).size)
+        assertEquals(AutoBrowseTree.NOW_PLAYING_CHAPTERS_ID, withBook.last().mediaId)
+        assertEquals("Chapters* Dune", withBook.last().title)
+        assertEquals(4, withBook.size)
+        assertEquals(3, AutoBrowseTree.rootChildren(current.copy(ranges = emptyList()), labels).size)
     }
 
     @Test
@@ -138,7 +147,7 @@ class AutoBrowseTreeTest {
     @Test
     fun `root shelves use the supplied labels, not built-in text`() {
         val shelves = AutoBrowseTree.rootChildren(null, labels)
-        assertEquals(listOf("Continue*", "Downloaded*"), shelves.map { it.title })
+        assertEquals(listOf("Continue*", "Downloaded*", ""), shelves.map { it.title })
         assertEquals("App*", AutoBrowseTree.rootMediaItem(labels).mediaMetadata.title.toString())
     }
 
@@ -146,5 +155,29 @@ class AutoBrowseTreeTest {
     fun `an untitled download falls back to the audiobook label`() {
         val entry = AutoBrowseTree.downloadedAudiobooks(listOf(download(9).copy(title = null)), labels).single()
         assertEquals("Audiobook*", entry.title)
+    }
+
+    @Test fun `large download shelves stay bounded without losing books`() {
+        val entries = (1..5000).map { AutoBrowseTree.BrowseEntry("book/$it", "Book $it", null, null, true) }
+        fun flatten(start: Int = 0, end: Int = entries.size): List<String> {
+            val children = AutoBrowseTree.grouped(AutoBrowseTree.DOWNLOADS_ID, entries, labels, start, end)
+            assertTrue(children.size <= 40)
+            return children.flatMap { entry ->
+                val group = AutoBrowseTree.parseGroup(entry.mediaId)
+                if (group == null) listOf(entry.mediaId) else flatten(group.start, group.end)
+            }
+        }
+        assertEquals(entries.map { it.mediaId }, flatten())
+    }
+
+    @Test fun `local range folders describe their actual contents`() {
+        val entries = (1..41).map { AutoBrowseTree.BrowseEntry("book/$it", "Title $it", null, null, true) }
+        assertEquals(listOf("Title 1 – Title 40", "Title 41 – Title 41"),
+            AutoBrowseTree.grouped(AutoBrowseTree.DOWNLOADS_ID, entries, labels).map { it.title })
+    }
+
+    @Test fun `invalid grouping IDs cannot request arbitrary parents or ranges`() {
+        assertNull(AutoBrowseTree.parseGroup("group/secret/0/40"))
+        assertNull(AutoBrowseTree.parseGroup("group/downloads/-1/40"))
     }
 }

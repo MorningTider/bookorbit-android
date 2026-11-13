@@ -127,6 +127,6 @@ object NetworkModule {
 
     @Provides
     @Singleton
-    fun provideApiService(retrofit: Retrofit, json: Json): ApiService =
-        CompatibleApiService(retrofit.create(ApiService::class.java), json)
+    fun provideApiService(retrofit: Retrofit): ApiService =
+        CompatibleApiService(retrofit.create(ApiService::class.java))
 }

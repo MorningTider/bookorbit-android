@@ -1,18 +1,45 @@
 ## 中文定制版
 
-当前自用包为 `0.8.0-custom.3`，版本码803，基于官方Android v0.8.0，对接群晖原生BookOrbit 3.8。
+当前自用包为 `0.9.0-custom.1`，版本码901，基于上游Android v0.9.0，对接群晖原生BookOrbit 3.8。
 
-- 修复自定义字体跨章重复加载，章节与后台页数计算共享已解码的字体，保留标题和正文显示前的字体检查。
-- TXT直接阅读沿用EPUB的字体、目录、批注与CFI定位，共享章节资源按引用计数释放。
-- 搜索页新增书源入口，自动读取服务器启用的来源，展示封面、简介、来源与已入库标记，管理后台任务和重复导入选择。
-- 阅读排版支持账号同步、全局默认、单书覆盖与离线补传。
-- 保留共享书评/章节评论/段评、阅读进度和日志、整本页码、护眼、跟手卷页及蓝白BookOrbit图标。
+- 整合0.9的Android Auto书名、作者和系列浏览、语音搜索、冷启动播放、封面与保存语速修复。
+- 首页与统计合并请求阅读目标和连续阅读数据，智能书架保留分页与查询。旧服务端仅在404/405时使用原接口。
+- 保留中文字体共享解码、EPUB/TXT跨章就绪检查、跟手卷页、护眼、整本页码、进度和日志同步。
+- 保留书源搜索与下载、封面和简介、已入库标记、可配置验重、后台任务与共享书评/章节评论/段评。
+- 阅读排版支持账号同步、全局默认、单书覆盖与离线补传，安装名称和蓝白图标保持BookOrbit。
 
-Full与F-Droid各341项单元测试、JS45项、常规22项、窄屏12项和F-Droid安装4项检查通过。域名只读联调通过，手机覆盖安装、真实字体、跨端联合操作与流畅度仍待实机验收，模拟器记录存在慢帧。验收细节见 [验收记录](docs/VALIDATION.md)。
+Full与F-Droid各388项单元测试、JS45项、637项中英文资源、常规29项、窄屏12项与F-Droid安装4项检查通过。84份关键定制实现与上一交付版逐文件一致。线上3.8统计批量和既有定制接口返回正常，当前账号没有智能书架可供线上分页验收，该流程已通过隔离HTTP回归。真机覆盖安装、中文字体字形、跨端联合操作、车机和流畅度继续跟踪，模拟器仍有慢帧。原生TTS、PDF批注等待办见 [剩余事项](docs/CUSTOMIZATION_REMAINING.md)。完整证据见 [验收记录](docs/VALIDATION.md)。
 
-本 fork 的阅读器定制代码维护在 `custom/bookorbit-android-v0.7.1`。需求和升级记录见 [定制需求](docs/CUSTOMIZATION_REQUIREMENTS.md)、[功能状态](docs/CUSTOM_FEATURE_MATRIX.md)、[剩余事项](docs/CUSTOMIZATION_REMAINING.md)、[补丁索引](docs/CUSTOM_PATCH_INDEX.md) 和 [上游同步流程](docs/CUSTOM_BRANCH_WORKFLOW.md)。
+本fork的定制分支为 `custom/bookorbit-android-v0.7.1`，名称保留历史，实际基线为v0.9.0。需求和升级记录见 [定制需求](docs/CUSTOMIZATION_REQUIREMENTS.md)、[功能状态](docs/CUSTOM_FEATURE_MATRIX.md)、[补丁索引](docs/CUSTOM_PATCH_INDEX.md) 和 [上游同步流程](docs/CUSTOM_BRANCH_WORKFLOW.md)。
 
 # BookOrbit — Android (native)
+
+## Original upstream maintenance notice
+
+The following notice is retained from deranjer/bookorbit-android v0.9.0.
+This fork continues the custom development tracked in `docs/CUSTOMIZATION_REMAINING.md`.
+
+This project will no longer be maintained. I am ending development because BookOrbit's server
+has begun restricting selected API routes to its official applications through app attestation,
+making continued support for an independently signed, open-source Android client uncertain.
+
+The server [added attestation requirements to existing routes](https://github.com/bookorbit/bookorbit/commit/b44d902eca79c082f8378ae336b9cc89c6a7de4e),
+and its [Android attestation policy](https://github.com/bookorbit/bookorbit/blob/v3.8.0/server/src/modules/app-attest/app-attest.policy.ts)
+accepts only the official package and approved signing certificates. Some routes remain available
+to other clients, and alternatives exist for the current widget and smart-scope restrictions;
+this does not mean every backend request is blocked today. Future server compatibility, fixes,
+and new features will no longer be maintained here.
+
+For a maintained alternative, use the
+[official BookOrbit Android application](https://play.google.com/store/apps/details?id=app.bookorbit.reader).
+The official Android app is not open source and offers paid Premium features; see its
+[purchase information](https://bookorbit.app/android/support/). As of November 11, 2026, the
+[official announcement](https://github.com/bookorbit/bookorbit/issues/2001) describes a closed
+Google Play beta with Premium free during testing. Follow that announcement for access instructions
+and check the current app listing for availability and purchase terms.
+
+The source and build instructions below remain available for reference and for anyone who wants
+to fork the project.
 
 Native Kotlin / Jetpack Compose client for a self-hosted
 [BookOrbit](https://github.com/bookorbit/bookorbit) server. This is a **standalone Gradle project** —
@@ -20,14 +47,14 @@ open this repository's root directly in Android Studio.
 
 > User-facing docs: **https://deranjer.github.io/bookorbit-android/** (source in [`website/`](website/)).
 > Privacy policy: **https://deranjer.github.io/bookorbit-android/privacy.html**.
-> Planned work: see [`ROADMAP.md`](ROADMAP.md).
+> Historical roadmap: see [`ROADMAP.md`](ROADMAP.md); development has ended.
 > Also available via [F-Droid](https://deranjer.github.io/fdroid/repo) (self-hosted repo).
 
-> **Status:** this is the BookOrbit mobile client. It supports auth + OIDC, library browsing, search,
+> **Existing features (unmaintained):** auth + OIDC, library browsing, search,
 > smart scopes, collections, authors/series, book detail, the foliate.js ebook reader, the Media3
 > audiobook player (with sleep timer and Chromecast), and downloads/offline. See
 > [Architecture & conventions](#architecture--conventions) below, the
-> [Cross-repo couplings](#cross-repo-couplings) section, and [`ROADMAP.md`](ROADMAP.md) for what's next.
+> [Cross-repo couplings](#cross-repo-couplings) section. [`ROADMAP.md`](ROADMAP.md) records historical plans.
 
 ## Prerequisites
 
@@ -63,7 +90,7 @@ right version (8.11.1) on first run.
 3. Pick a device in the toolbar's device dropdown (or create one in **Device Manager**).
 4. Click **Run ▶**. Studio builds, installs, and launches the app.
 
-The debug variant installs as application id **`com.bookorbit.debug`** (the `.debug` suffix lets debug
+The custom debug variant installs as application id **`com.bookorbit.compat`** (the `.debug` suffix lets debug
 and release builds coexist on one device).
 
 ## Run it from the command line
@@ -80,7 +107,7 @@ From the repository root:
 Launch after installing:
 
 ```bash
-adb shell monkey -p com.bookorbit.debug -c android.intent.category.LAUNCHER 1
+adb shell monkey -p com.bookorbit.compat -c android.intent.category.LAUNCHER 1
 ```
 
 (`adb` lives in `<sdk>/platform-tools/`.) To start an emulator headlessly:

@@ -87,3 +87,12 @@
 - `bridge.js`按所选字体组复用加载器，切换字体先等待加载，再更新正文样式。新章节在字体选择变化时重新准备当前选择，继续等待常规、粗体、斜体及文档字体就绪。
 - `reader-txt.js`维护章节URL引用计数，与前台、相邻预取和后台分页的独立资源生命周期配合。
 - `ReaderChapterFontTest`使用约26MB的系统中文字体和合成EPUB/TXT，检查实际文件读取次数、先选字体再仿真跨章、标题同步和字体就绪。`reader-loading.test.mjs`检查共享字体身份、失败重试、释放与旧请求，TXT测试检查共享资源保持到最后一次释放。
+
+
+## BA-C39
+
+- 上游v0.9.0的AutoLibraryRepository、AutoLibraryTree、AutoSearch、AutoCatalog、AutoArtwork、MediaLibraryCallback与PlaybackService维护车机浏览、搜索、冷播放和封面授权。
+- ReadingWidgetsRepository供DashboardViewModel和StatsViewModel复用两个统计组件的单次批量请求。失败项独立处理，旧路由仅在404/405回退。CompatibleApiService保留进度和智能书架适配，ApiService与ServerCompatibility中的重复声明已合并。
+- ReadingWidgetsRepositoryTest通过NetworkModule真实入口验证两版服务的请求次数，BrowseRepositoryTest通过现有兼容适配器核对上游智能书架行为。Server37IntegrationTest同步改用批量组件入口。
+- values和values-zh-rCN补齐新增资源，SettingsScreen维护说明指向本fork的升级记录。
+- 84份阅读器、评论、书源、详情和主题实现与181341b逐文件一致。BA-C34至BA-C37功能状态不由本次升级改变。

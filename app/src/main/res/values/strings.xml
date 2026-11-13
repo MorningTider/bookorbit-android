@@ -217,6 +217,10 @@
     <string name="settings_folder_inaccessible">This folder isn\'t accessible anymore (permission revoked or the storage was removed). New downloads will use app storage until you pick a new folder.</string>
     <string name="settings_progress_book">Whole book</string>
     <string name="settings_progress_chapter">Chapter</string>
+    <string name="settings_maintenance_title">Custom fork and upstream maintenance</string>
+    <string name="settings_maintenance_description">This custom fork continues reader, localization and Synology compatibility work. The original upstream has ended maintenance. See the maintenance notes for details.</string>
+    <string name="settings_read_readme">Maintenance notes</string>
+    <string name="settings_readme_open_failed">Could not open the maintenance notes. Please install or enable a web browser.</string>
     <string name="settings_app_version">App version</string>
     <string name="settings_update_available">Update available</string>
     <string name="settings_up_to_date">Up to date</string>
@@ -430,6 +434,22 @@
     <string name="two_pane_select_book">Select a book to see its details here.</string>
     <string name="auto_continue_listening">Continue listening</string>
     <string name="auto_downloaded">Downloaded</string>
+    <string name="auto_audiobooks">Audiobooks</string>
+    <string name="auto_by_title">By title</string>
+    <string name="auto_by_author">By author</string>
+    <string name="auto_by_series">By series</string>
+    <string name="auto_unknown_author">Unknown author</string>
+    <string name="auto_title_range">%1$s – %2$s</string>
+    <plurals name="auto_book_count">
+        <item quantity="one">%d book</item>
+        <item quantity="other">%d books</item>
+    </plurals>
+    <string name="auto_err_sign_in">Sign in to BookOrbit on your phone when it is safe to do so.</string>
+    <string name="auto_err_network">Cannot reach BookOrbit. Check your connection or choose a downloaded audiobook.</string>
+    <string name="auto_err_no_results">No matching audiobooks found.</string>
+    <string name="auto_err_no_history">No unfinished audiobook is available to resume. Choose a book to start listening.</string>
+    <string name="auto_err_invalid">This selection is no longer available. Open the library again.</string>
+    <string name="auto_err_unavailable">This audiobook could not be loaded. Check its files or choose another book.</string>
     <string name="auto_chapters_of">Chapters · %1$s</string>
     <string name="nav_stats">Stats</string>
     <string name="settings_nav_bar">Navigation bar</string>

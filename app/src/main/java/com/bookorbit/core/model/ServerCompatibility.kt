@@ -44,4 +44,8 @@ data class ReadingProgressWrite(
 @Serializable data class DashboardWidgetList(val items: List<DashboardWidgetResult>)
 
 @Serializable
-data class DashboardWidgetResult(val type: String, val data: JsonElement, val failed: Boolean)
+data class DashboardWidgetResult(
+    val type: String,
+    val data: JsonElement? = null,
+    val failed: Boolean = false,
+)

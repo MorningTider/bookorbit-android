@@ -67,7 +67,7 @@ class Server37IntegrationTest {
                 .client(client)
                 .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
                 .build()
-        val api = NetworkModule.provideApiService(retrofit, json)
+        val api = NetworkModule.provideApiService(retrofit)
         token = api.login(LoginRequest(fixture.username, fixture.password)).accessToken
         val firstCfi = "epubcfi(/6/2!/4/2/1:0)"
         val nextCfi = "epubcfi(/6/2!/4/2/1:5)"
@@ -104,8 +104,9 @@ class Server37IntegrationTest {
         )
         assertEquals(12.0, api.getFileProgress(fixture.fileId)!!.percentage!!, 0.001)
         assertTrue(api.getSmartScopeBooks(fixture.scopeId, 1, 20, null).total >= 1)
-        assertTrue(api.getReadingStreak().currentStreak >= 0)
-        assertTrue(api.getReadingGoal().completedBooks >= 0)
+        val widgets = ReadingWidgetsRepository(api, json).load()
+        assertTrue(widgets.streak!!.currentStreak >= 0)
+        assertTrue(widgets.goal!!.completedBooks >= 0)
 
         val now = Instant.now()
         api.saveReadingSession(

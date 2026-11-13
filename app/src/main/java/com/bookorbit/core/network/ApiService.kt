@@ -458,6 +458,7 @@ interface ApiService {
     /**
      * Raw because the shape changed in 3.0 - decode with [com.bookorbit.core.model.ScrollerBooks].
      */
+
     @GET("dashboard/scrollers/{type}")
     suspend fun getScroller(
         @Path("type") type: String,

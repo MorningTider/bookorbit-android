@@ -155,8 +155,15 @@ class BookCommentsTest {
         var previous: androidx.compose.ui.geometry.Rect? = null
         var stableSince = android.os.SystemClock.elapsedRealtime()
         compose.waitUntil(5000) {
-            val bounds = compose.onNodeWithText(text).fetchSemanticsNode().boundsInRoot
+            // During IME/sheet recomposition the node can briefly be absent. Fetch the collection
+            // so a transient miss does not build a diagnostic semantics tree off the UI thread.
+            val bounds = compose.onAllNodesWithText(text).fetchSemanticsNodes().singleOrNull()?.boundsInRoot
             val now = android.os.SystemClock.elapsedRealtime()
+            if (bounds == null) {
+                previous = null
+                stableSince = now
+                return@waitUntil false
+            }
             if (bounds != previous) {
                 previous = bounds
                 stableSince = now

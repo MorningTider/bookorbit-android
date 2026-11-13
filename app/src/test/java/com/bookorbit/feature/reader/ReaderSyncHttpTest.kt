@@ -59,7 +59,7 @@ class ReaderSyncHttpTest {
                     .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
                     .build()
                     .create(ApiService::class.java)
-            val api = CompatibleApiService(rawApi, json)
+            val api = CompatibleApiService(rawApi)
             val dao = mockk<ReaderProgressDao>()
             var row: ReaderProgressEntity? = null
             coEvery { dao.get(1) } answers { row }

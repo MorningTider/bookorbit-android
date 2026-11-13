@@ -611,4 +611,23 @@
     <string name="reader_download_incomplete">文件下载不完整，请重试。</string>
     <string name="reader_download_finalize">阅读文件保存失败，请重试。</string>
     <string name="sources_choose_library">请选择目标书库</string>
+    <string name="settings_maintenance_title">定制版与上游维护</string>
+    <string name="settings_maintenance_description">本定制版继续维护阅读器、中文界面和群晖服务兼容。原上游已停止维护，详情见维护记录。</string>
+    <string name="settings_read_readme">查看维护记录</string>
+    <string name="settings_readme_open_failed">无法打开维护记录，请安装或启用浏览器。</string>
+    <string name="auto_audiobooks">有声图书</string>
+    <string name="auto_by_title">按书名</string>
+    <string name="auto_by_author">按作者</string>
+    <string name="auto_by_series">按系列</string>
+    <string name="auto_unknown_author">未知作者</string>
+    <string name="auto_title_range">%1$s – %2$s</string>
+    <string name="auto_err_sign_in">请在方便安全操作时，在手机上登录 BookOrbit。</string>
+    <string name="auto_err_network">无法连接 BookOrbit，请检查网络或选择已下载的有声图书。</string>
+    <string name="auto_err_no_results">没有找到匹配的有声图书。</string>
+    <string name="auto_err_no_history">暂无可继续播放的有声图书，请选择一本开始收听。</string>
+    <string name="auto_err_invalid">该项目已不可用，请重新打开书库。</string>
+    <string name="auto_err_unavailable">无法加载此有声图书，请检查文件或选择其他图书。</string>
+    <plurals name="auto_book_count">
+        <item quantity="other">%d 本书</item>
+    </plurals>
 </resources>

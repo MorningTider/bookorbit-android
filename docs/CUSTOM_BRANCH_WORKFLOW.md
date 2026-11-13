@@ -4,8 +4,8 @@
 
 - `origin` 指向 `https://github.com/MorningTider/bookorbit-android.git`。
 - `upstream` 指向 `https://github.com/deranjer/bookorbit-android.git`。
-- 当前基线为官方 `v0.8.0`，提交 `9cbc76a7c8b1a5a4e6453484ee46eba768b1a6d1`。
-- 定制分支沿用 `custom/bookorbit-android-v0.7.1`，0.8整合分支为 `upgrade/upstream-v0.8.0`。分支名保留历史，实际基线以上述tag为准。
+- 当前基线为上游 `v0.9.0`，提交 `a55eaa13d8ba27cd143dda882836ed35a4dc923f`。
+- 定制分支沿用 `custom/bookorbit-android-v0.7.1`，当前整合分支为 `upgrade/upstream-v0.9.0`。分支名保留历史，实际基线以上述tag为准。
 
 ## 升级步骤
 
@@ -79,3 +79,14 @@ BA-C38升级回归需运行ReaderChapterFontTest，分别覆盖自定义字体�
 版本标签按源码用途命名。v0.8.0和v0.9.0指向原始上游提交；v0.8.0-custom.3指向已验收的定制包源码181341b。普通分支推送与Sync fork均不会自动补齐这些标签。完成自用包验收时，同步记录版本、源码、签名、包SHA-256及对应定制标签，并单独推送该标签。
 
 本次补齐上述三个标签。0.9定制版完成合并与验收后，再建立对应定制标签。当前main、定制分支与安装包的版本分别以上述记录为准。
+
+
+## 2026-11-14 0.9定制整合
+
+候选0.9.0-custom.1版本码901已完成合并与双变体验收。后续升级需保留ReadingWidgetsRepository的批量请求及逐项失败行为，CompatibleApiService继续负责进度和智能书架兼容。DashboardWidgetRequest、DashboardWidgetList和DashboardWidgetResult沿用ServerCompatibility.kt中的单一表示，禁止重复声明同一端点和DTO。
+
+运行ReadingWidgetsRepositoryTest时同时检查NetworkModule创建的实际适配器。3.8两个组件共一次请求，3.5只回退一次批量路由、各请求一次旧组件，智能书架检查范围、分页和查询词。上游新增的维护提示已调整为本fork说明，升级时持续检查中文翻译与链接归属。
+
+普通模拟器回归增加AutoMediaSessionTest、AutoArtworkProviderTest与SettingsRowLayoutTest。BookCommentsTest在IME和底部面板移动时通过集合查询等待目标节点，避免临时节点消失触发测试线程构建诊断树。该修正保留实际点击、错误重试、回复和删除确认断言。
+
+本次没有Room结构变更。原生包继续使用com.bookorbit.compat和旧中文包签名。发布对应定制标签时指向已验收源码，APK摘要与签名记录到VALIDATION.md。
