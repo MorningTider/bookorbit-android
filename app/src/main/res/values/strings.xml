@@ -631,4 +631,24 @@
     <string name="reader_download_incomplete">File download is incomplete. Retry.</string>
     <string name="reader_download_finalize">Could not save the reading file. Retry.</string>
     <string name="sources_choose_library">Choose a destination</string>
+
+    <string name="speech_title">Read aloud</string>
+    <string name="speech_preparing">Preparing speech engine…</string>
+    <string name="speech_pause">Pause</string>
+    <string name="speech_resume">Read aloud</string>
+    <string name="speech_stop">Stop</string>
+    <string name="speech_rate">Speed %1$.1f×</string>
+    <string name="speech_voice_default">Use book language</string>
+    <string name="speech_voice_network">Network required</string>
+    <string name="speech_voice_offline">Offline voice</string>
+    <string name="speech_sleep">Sleep timer</string>
+    <string name="speech_sleep_off">Off</string>
+    <string name="speech_sleep_minutes">%1$d min</string>
+    <string name="speech_scope_hint">Install voices in system speech settings. Speech stops when you leave this book.</string>
+    <string name="speech_system_settings">System speech settings</string>
+    <string name="speech_engine_missing">Speech engine unavailable. Install or enable an engine in system settings, then retry.</string>
+    <string name="speech_language_missing">Voice data unavailable for this language. Install or choose another voice.</string>
+    <string name="speech_audio_busy">Audio focus unavailable. Try again shortly.</string>
+    <string name="speech_playback_failed">Speech failed. Check your speech engine, voice data and connection, then retry.</string>
+    <string name="speech_reader_unavailable">Unable to read this chapter. Navigate to the text and retry.</string>
 </resources>

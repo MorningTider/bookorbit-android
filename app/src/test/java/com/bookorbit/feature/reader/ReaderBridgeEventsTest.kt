@@ -6,6 +6,15 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ReaderBridgeEventsTest {
+    @Test fun `speech messages require session and preserve native playback state`() {
+        val event = ReaderBridge.parseEvent("""{"type":"speech","session":12,"text":"中文正文","chapter":"第二章","language":"zh-CN"}""") as ReaderEvent.Speech
+        assertEquals(12L, event.session)
+        assertEquals("中文正文", event.text)
+        assertEquals("第二章", event.chapter)
+        assertEquals(false, event.done)
+        assertNull(ReaderBridge.parseEvent("""{"type":"speech","text":"stale"}"""))
+    }
+
     @Test
     fun `parses a tap`() {
         val e = ReaderBridge.parseEvent("""{"type":"tap","x":0.82}""")

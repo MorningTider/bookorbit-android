@@ -150,6 +150,8 @@ internal class ReaderPageCurlHost(
         if (interactive && snapshot == null) return false
         cached = null
         handler.removeCallbacks(warm)
+        controller.beforeNavigate?.invoke()
+        controller.paginationActive(true)
         origin = controller.currentLocation
         generation++
         destinationReady = false
@@ -255,6 +257,7 @@ internal class ReaderPageCurlHost(
     private fun finish(committed: Boolean) {
         generation++
         state = Turn.IDLE
+        controller.paginationActive(false)
         handler.removeCallbacks(recover)
         animationFrame?.let(page::removeCallbacks)
         animationFrame = null

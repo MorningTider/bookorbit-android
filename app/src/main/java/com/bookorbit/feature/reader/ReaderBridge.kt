@@ -7,6 +7,7 @@ import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -36,6 +37,17 @@ data class ViewportRect(val left: Double, val top: Double, val right: Double, va
 data class SearchHit(val cfi: String, val pre: String, val match: String, val post: String)
 
 sealed interface ReaderEvent {
+    data class Speech(
+        val session: Long,
+        val text: String,
+        val language: String,
+        val chapter: String,
+        val done: Boolean,
+        val error: Boolean,
+        val cfi: String? = null,
+        val fraction: Double? = null,
+        val chapterHref: String? = null,
+    ) : ReaderEvent
     data object Ready : ReaderEvent
     data class Loaded(val toc: List<TocItem>, val title: String?) : ReaderEvent
     data class Relocate(
@@ -100,6 +112,17 @@ object ReaderBridge {
     fun parseEvent(data: String): ReaderEvent? = runCatching {
         val obj = json.parseToJsonElement(data).jsonObject
         when (obj["type"]?.jsonPrimitive?.contentOrNull) {
+            "speech" -> ReaderEvent.Speech(
+                session = obj["session"]?.jsonPrimitive?.longOrNull ?: return null,
+                text = obj["text"]?.jsonPrimitive?.contentOrNull.orEmpty().take(4000),
+                language = obj["language"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                chapter = obj["chapter"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                done = obj["done"]?.jsonPrimitive?.booleanOrNull ?: false,
+                error = obj["error"]?.jsonPrimitive?.booleanOrNull ?: false,
+                cfi = obj["cfi"]?.jsonPrimitive?.contentOrNull,
+                fraction = obj["fraction"]?.jsonPrimitive?.doubleOrNull,
+                chapterHref = obj["chapterHref"]?.jsonPrimitive?.contentOrNull,
+            )
             "ready" -> ReaderEvent.Ready
             "loaded" -> {
                 val toc = obj["toc"]?.let {

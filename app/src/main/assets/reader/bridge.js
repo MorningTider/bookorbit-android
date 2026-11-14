@@ -12,6 +12,9 @@
  * asset served by WebViewAssetLoader.
  */
 import "./foliate/view.js";
+import { createReaderIdleGate } from "./reader-idle.js";
+import { createReaderSpeech } from "./reader-speech.js";
+const paginationIdle = createReaderIdleGate();
 import { makeTextBook } from "./reader-txt.js";
 import { settleReaderFonts, prepareSectionFonts, createSectionFontLoader } from "./reader-loading.js";
 import {
@@ -41,6 +44,12 @@ let sectionFontKey = null;
 let loadSectionFonts = null;
 /** The <foliate-view> element, once created. */
 let view = null;
+let navigation = Promise.resolve();
+const speech = createReaderSpeech(() => view, post, () => navigation);
+function navigateReader(action) {
+  speech.stop();
+  navigation = speech.settleDisplay().then(action).catch(postError);
+}
 /** Base64 transfer state for the book currently being opened. */
 let pending = null;
 const autoReader = createAutoReader({
@@ -135,6 +144,7 @@ function schedulePageCounter() {
       styles: () => generateCSS(currentSettings),
       prepare: (doc) => prepareSectionFonts(doc, currentSettings, fontFaces, loadSectionFonts),
       onChange: postPages,
+      isBusy: paginationIdle.isBusy,
     });
   }, 500);
 }
@@ -499,11 +509,15 @@ function attachDocHandlers(doc, index) {
     "pointerdown",
     () => {
       autoReader.stop(true);
+      paginationIdle.setActive(true, "pointer");
       const sel = doc.getSelection();
       selectionAtPointerDown = !!sel && !sel.isCollapsed;
     },
     true,
   );
+
+  for (const event of ["pointerup", "pointercancel"])
+    doc.addEventListener(event, () => paginationIdle.setActive(false, "pointer"), true);
 
   doc.addEventListener("click", (e) => {
     // A tap that merely dismissed an existing selection must not also turn the page.
@@ -699,7 +713,10 @@ async function openBook(meta, parts) {
 }
 
 async function turnPage(next) {
+  paginationIdle.touch();
   try {
+    speech.stop();
+    await speech.settleDisplay();
     await (next ? view.next() : view.prev());
   } catch (error) {
     postError(error?.message ?? "Page turn failed");
@@ -712,6 +729,7 @@ async function turnPage(next) {
 // Begin a fresh book transfer. meta = { format, cfi, fraction, settings }.
 window.__readerBegin = (metaJson) => {
   try {
+    speech.stop();
     pending = { meta: JSON.parse(metaJson), parts: [] };
     sectionFontKey = null;
     loadSectionFonts = null;
@@ -754,12 +772,20 @@ window.__readerCommand = (json) => {
   } catch {
     return;
   }
+  if (["goTo", "goToFraction", "previousChapter", "nextChapter"].includes(cmd.type))
+    paginationIdle.touch();
   switch (cmd.type) {
+    case "paginationActive":
+      paginationIdle.setActive(cmd.active === true);
+      break;
+    case "speech":
+      void speech.command(cmd);
+      break;
     case "goTo":
-      void view.goTo(cmd.target).catch(() => {});
+      navigateReader(() => view.goTo(cmd.target));
       break;
     case "goToFraction":
-      if (typeof view.goToFraction === "function") view.goToFraction(cmd.value);
+      if (typeof view.goToFraction === "function") navigateReader(() => view.goToFraction(cmd.value));
       break;
     case "restorePage":
       void (async () => {
@@ -772,10 +798,10 @@ window.__readerCommand = (json) => {
       })();
       break;
     case "previousChapter":
-      view.renderer?.prevSection?.();
+      navigateReader(() => view.renderer?.prevSection?.());
       break;
     case "nextChapter":
-      view.renderer?.nextSection?.();
+      navigateReader(() => view.renderer?.nextSection?.());
       break;
     case "autoRead":
       if (cmd.running) autoReader.start(cmd.seconds);

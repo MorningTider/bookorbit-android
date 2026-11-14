@@ -128,7 +128,7 @@ class ReaderController {
     fun open(params: OpenParams, context: Context) = runOpen(params, context)
 
     fun goTo(target: String) =
-        command(
+        navigate(
             buildJsonObject {
                     put("type", "goTo")
                     put("target", target)
@@ -137,7 +137,7 @@ class ReaderController {
         )
 
     fun goToFraction(value: Double) =
-        command(
+        navigate(
             buildJsonObject {
                     put("type", "goToFraction")
                     put("value", value)
@@ -156,9 +156,26 @@ class ReaderController {
     private var lastLayout: ReaderSettings? = null
     internal var pageColor = android.graphics.Color.WHITE
 
-    fun previousChapter() = command(buildJsonObject { put("type", "previousChapter") }.toString())
+    var beforeNavigate: (() -> Unit)? = null
 
-    fun nextChapter() = command(buildJsonObject { put("type", "nextChapter") }.toString())
+    fun paginationActive(active: Boolean) = command(
+        buildJsonObject {
+            put("type", "paginationActive")
+            put("active", active)
+        }.toString()
+    )
+
+    fun speech(action: String, session: Long) = command(
+        buildJsonObject {
+            put("type", "speech")
+            put("action", action)
+            put("session", session)
+        }.toString()
+    )
+
+    fun previousChapter() = navigate(buildJsonObject { put("type", "previousChapter") }.toString())
+
+    fun nextChapter() = navigate(buildJsonObject { put("type", "nextChapter") }.toString())
 
     fun autoRead(running: Boolean, seconds: Int) =
         command(
@@ -175,6 +192,7 @@ class ReaderController {
     fun prev() = turnPage(false)
 
     private fun turnPage(next: Boolean) {
+        beforeNavigate?.invoke()
         val host = curlHost
         if (pageCurlEnabled && host != null) host.turn(next) else turnPageDirect(next)
     }
@@ -295,6 +313,11 @@ class ReaderController {
     }
 
     // The `window.__readerCommand &&` guard inside the JS no-ops if the bridge isn't ready yet.
+    private fun navigate(json: String) {
+        beforeNavigate?.invoke()
+        command(json)
+    }
+
     private fun command(json: String) = eval(ReaderBridge.jsCommand(json))
 
     // Reads and encodes the file one CHUNK_BYTES slice at a time so peak memory stays bounded by

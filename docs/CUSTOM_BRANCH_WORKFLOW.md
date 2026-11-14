@@ -90,3 +90,12 @@ BA-C38升级回归需运行ReaderChapterFontTest，分别覆盖自定义字体�
 普通模拟器回归增加AutoMediaSessionTest、AutoArtworkProviderTest与SettingsRowLayoutTest。BookCommentsTest在IME和底部面板移动时通过集合查询等待目标节点，避免临时节点消失触发测试线程构建诊断树。该修正保留实际点击、错误重试、回复和删除确认断言。
 
 本次没有Room结构变更。原生包继续使用com.bookorbit.compat和旧中文包签名。发布对应定制标签时指向已验收源码，APK摘要与签名记录到VALIDATION.md。
+
+
+## 0.9.0-custom.2朗读升级回归
+
+新增ReaderSpeechTest，检查EPUB/TXT、语速音色、暂停续播、后台跨章、通知媒体控制与完结位置。保留与ReaderChapterFontTest、ReaderEngineTest、ReaderPreferenceSyncTest的组合回归。原生语音依赖系统引擎与音色数据，模拟器静音夹具的通过结果与真机发声质量分别记录。
+
+测试引擎仅在androidTest中声明，debug的SpeechTestEntryPoint连接同一Hilt单例供夹具与服务验收。更改系统默认引擎的临时权限必须立即释放后再发起音频焦点请求，避免测试权限身份改变AppOp结果。结束后恢复原引擎。后台朗读不等待隐藏页面的排版，页面返回时恢复CFI，手动定位使旧朗读回调失效。
+
+交互门控合并指针和原生动画状态，后台页数继续计算。不得移除字体和标题就绪检查来改善计时。保留实际字体读取次数、自然跨章和帧耗时报告。

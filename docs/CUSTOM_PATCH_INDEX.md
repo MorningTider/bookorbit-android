@@ -96,3 +96,12 @@
 - ReadingWidgetsRepositoryTest通过NetworkModule真实入口验证两版服务的请求次数，BrowseRepositoryTest通过现有兼容适配器核对上游智能书架行为。Server37IntegrationTest同步改用批量组件入口。
 - values和values-zh-rCN补齐新增资源，SettingsScreen维护说明指向本fork的升级记录。
 - 84份阅读器、评论、书源、详情和主题实现与181341b逐文件一致。BA-C34至BA-C37功能状态不由本次升级改变。
+
+
+## BA-C34与BA-C38交互门控
+
+- ReaderSpeechPlayer、ReaderSpeechService、ReaderSpeechViewModel与ReaderSpeechSheet提供原生引擎、音色/语速设置、前台通知和媒体会话。Manifest维护TTS包可见性与私有mediaPlayback服务。Android Auto的语音搜索入口继续由PlaybackService维护，私有朗读会话的MissingOnPlayFromSearch检查采用定向抑制。
+- reader-speech.js通过现有书籍适配器读取独立章节，分段保留CFI和书脊权重进度。后台章节接续独立于隐藏页面的排版，前台显示排队定位。ReaderBridge.Speech携带会话、文字、位置和结束事件，ReaderScreen沿用现有onRelocate同步路径。显式导航等待正在执行的显示定位，再执行用户请求。
+- reader-idle.js维护指针与原生翻页两个活动来源，reader-pagination.js在隐藏或交互时暂停测量。ReaderPageCurlHost覆盖从按住到动画完成的区间，避免pointercancel提前释放原生动画的门控。
+- ReaderSpeechTest用独立静音TextToSpeechService验收EPUB/TXT、开始按钮、暂停/续播、后台、通知媒体控制、CFI及完结。测试引擎采用平台Java类，可在独立测试APK进程运行。语音引擎设置和显示配置需在测试后恢复。reader-speech与reader-idle的JS测试覆盖代理对、分段、会话隔离和测量恢复。
+- 阅读器字体、CFI、排版同步及数据库版本保持既有实现。新增20个朗读字符串均在英文与简体中文资源中维护。

@@ -64,6 +64,19 @@ fun ReaderScreen(
 ) {
     val ui by vm.ui.collectAsStateWithLifecycle()
     val controller = remember { ReaderController() }
+    val speechVm: ReaderSpeechViewModel = hiltViewModel()
+    val speech = speechVm.player
+    val speechState by speech.state.collectAsStateWithLifecycle()
+    var speechVisible by remember { mutableStateOf(false) }
+    DisposableEffect(controller) {
+        speech.attach(controller, ui.title.orEmpty(), controller::speech)
+        controller.beforeNavigate = speech::stop
+        onDispose {
+            controller.beforeNavigate = null
+            speech.detach(controller)
+        }
+    }
+    LaunchedEffect(ui.title) { speech.updateTitle(ui.title.orEmpty()) }
     var ready by remember { mutableStateOf(false) }
     var opened by remember { mutableStateOf(false) }
     var rendererFailed by remember { mutableStateOf(false) }
@@ -195,11 +208,16 @@ fun ReaderScreen(
     LaunchedEffect(Unit) {
         controller.listener = { event ->
             when (event) {
+                is ReaderEvent.Speech -> {
+                    if (speech.accept(event)) {
+                        vm.onRelocate(event.cfi, event.fraction, event.chapter.takeIf { it.isNotBlank() }, event.chapterHref)
+                    }
+                }
                 is ReaderEvent.Ready -> ready = true
                 is ReaderEvent.Loaded -> vm.onLoaded(event.toc, event.title)
                 is ReaderEvent.Pages -> vm.onPages(event.current, event.total, event.wholeBook)
                 is ReaderEvent.Relocate ->
-                    vm.onRelocate(event.cfi, event.fraction, event.chapterTitle, event.chapterHref)
+                    if (!speech.state.value.active) vm.onRelocate(event.cfi, event.fraction, event.chapterTitle, event.chapterHref)
                 ReaderEvent.AutoReadStopped -> autoReading = false
                 ReaderEvent.PageTurnRequested,
                 ReaderEvent.PageTurnCompleted -> Unit
@@ -279,6 +297,7 @@ fun ReaderScreen(
                         fontRepository = vm.fontRepository,
                         modifier = Modifier.fillMaxSize(),
                         onRendererGone = {
+                            speech.stop()
                             rendererFailed = true
                             autoReading = false
                             vm.onRendererGone()
@@ -338,6 +357,11 @@ fun ReaderScreen(
                                 ui.chapterTitle,
                             )
                 },
+                onSpeech = {
+                    autoReading = false
+                    speech.prepare()
+                    speechVisible = true
+                },
                 onSearch = {
                     autoReading = false
                     searchVisible = true
@@ -384,6 +408,8 @@ fun ReaderScreen(
                 Text(stringResource(R.string.rs_stop_auto_read))
             }
         }
+
+        if (speechVisible) ReaderSpeechSheet(ui.settings, speech, speechState) { speechVisible = false }
 
         ui.toolbar?.let { target ->
             val annotation =

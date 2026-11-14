@@ -17,6 +17,7 @@ export function createPageCounter({
   styles,
   prepare,
   onChange,
+  isBusy = () => false,
 }) {
   let closed = false;
   let measuring = null;
@@ -41,7 +42,7 @@ export function createPageCounter({
         if (globalThis.requestIdleCallback)
           await new Promise((resolve) => requestIdleCallback(resolve));
         if (closed) return;
-        while (document.hidden && !closed)
+        while ((document.hidden || isBusy()) && !closed)
           await new Promise((resolve) => setTimeout(resolve, 500));
         if (closed) return;
         await measuring.goTo({ index });

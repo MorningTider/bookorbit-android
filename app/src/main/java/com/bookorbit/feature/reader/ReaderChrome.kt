@@ -65,6 +65,7 @@ fun ReaderChrome(
     onReview: () -> Unit = {},
     onChapterComment: () -> Unit = {},
     chapterAvailable: Boolean = true,
+    onSpeech: () -> Unit = {},
 ) {
     var seeking by remember { mutableStateOf<Float?>(null) }
     val fraction = seeking ?: (precisePercentage / 100).toFloat()
@@ -94,6 +95,9 @@ fun ReaderChrome(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
+                    }
+                    TextButton(onClick = onSpeech, enabled = loaded) {
+                        Text(stringResource(R.string.speech_title))
                     }
                     IconButton(onClick = onSearch) {
                         Icon(Icons.Default.Search, stringResource(R.string.search_in_book))
